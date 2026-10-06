@@ -1,0 +1,143 @@
+import { NextRequest, NextResponse } from "next/server";
+
+const BNPB_FLOOD_HAZARD_SAMPLES_URL =
+  "https://gis.bnpb.go.id/server/rest/services/inarisk/layer_bahaya_banjir/ImageServer/getSamples";
+
+export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams;
+
+  const lon = searchParams.get("lon");
+  const lat = searchParams.get("lat");
+
+  if (!lon || !lat) {
+    return NextResponse.json(
+      {
+        error: "lon and lat are required",
+      },
+      {
+        status: 400,
+      }
+    );
+  }
+
+  const longitude = Number(lon);
+  const latitude = Number(lat);
+
+  if (
+    !Number.isFinite(longitude) ||
+    !Number.isFinite(latitude) ||
+    longitude < -180 ||
+    longitude > 180 ||
+    latitude < -90 ||
+    latitude > 90
+  ) {
+    return NextResponse.json(
+      {
+        error: "Invalid coordinates",
+      },
+      {
+        status: 400,
+      }
+    );
+  }
+
+  const geometry = JSON.stringify({
+    x: longitude,
+    y: latitude,
+    spatialReference: {
+      wkid: 4326,
+    },
+  });
+
+  const params = new URLSearchParams({
+    geometry,
+    geometryType: "esriGeometryPoint",
+
+    pixelSize: JSON.stringify({
+        x: 100,
+        y: 100,
+        spatialReference: {
+        wkid: 3395,
+        },
+    }),
+
+    returnFirstValueOnly: "true",
+    interpolation: "RSP_BilinearInterpolation",
+    f: "json",
+    });
+
+  try {
+    const response = await fetch(
+      `${BNPB_FLOOD_HAZARD_SAMPLES_URL}?${params.toString()}`,
+      {
+        cache: "no-store",
+      }
+    );
+
+    if (!response.ok) {
+      return NextResponse.json(
+        {
+          error: "BNPB flood hazard request failed",
+          status: response.status,
+        },
+        {
+          status: 502,
+        }
+      );
+    }
+
+    const data = await response.json();
+
+    const rawValue = data.samples?.[0]?.value;
+
+    const value =
+      rawValue === "" ||
+      rawValue === null ||
+      rawValue === undefined
+        ? null
+        : Number(rawValue);
+
+    const category = classifyFloodHazard(
+        value !== null && Number.isFinite(value)
+            ? value
+            : null
+        );
+
+        return NextResponse.json({
+        longitude,
+        latitude,
+        value:
+            value !== null && Number.isFinite(value)
+            ? value
+            : null,
+        category,
+        hasData:
+            value !== null && Number.isFinite(value),
+        resolutionMeters:
+            data.samples?.[0]?.resolution ?? null,
+        source: "BNPB InaRISK",
+        layer: "Flood hazard",
+        });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: "Unable to reach BNPB flood hazard service",
+        details:
+          error instanceof Error
+            ? error.message
+            : "Unknown error",
+      },
+      {
+        status: 502,
+      }
+    );
+  }
+}
+
+function classifyFloodHazard(value: number | null) {
+  if (value === null) return "no-data";
+
+  if (value < 0.33) return "low";
+  if (value < 0.66) return "moderate";
+  return "high";
+}
