@@ -14,7 +14,15 @@ type HazardCategory =
   | "high"
   | "no-data";
 
+type HazardStatus =
+  | "idle"
+  | "loading"
+  | "success"
+  | "no-data"
+  | "error";
+
 type HazardResult = {
+  status: HazardStatus;
   value: number | null;
   category: HazardCategory;
   hasData: boolean;
@@ -24,23 +32,35 @@ type HazardResult = {
 };
 
 type SiteHazards = {
-  flood: HazardResult | null;
-  tsunami: HazardResult | null;
-  landslide: HazardResult | null;
+  flood: HazardResult;
+  tsunami: HazardResult;
+  landslide: HazardResult;
+  earthquake: HazardResult;
 };
 
 type HazardType = keyof SiteHazards;
 
+const createIdleHazard = (): HazardResult => ({
+  status: "idle",
+  value: null,
+  category: "no-data",
+  hasData: false,
+  resolutionMeters: null,
+  source: "BNPB InaRISK",
+});
+
 const EMPTY_HAZARDS: SiteHazards = {
-  flood: null,
-  tsunami: null,
-  landslide: null,
+  flood: createIdleHazard(),
+  tsunami: createIdleHazard(),
+  landslide: createIdleHazard(),
+  earthquake: createIdleHazard(),
 };
 
 const HAZARD_ENDPOINTS: Record<HazardType, string> = {
   flood: "/api/bnpb/flood-hazard",
   tsunami: "/api/bnpb/tsunami-hazard",
   landslide: "/api/bnpb/landslide-hazard",
+  earthquake: "/api/bnpb/earthquake-hazard",
 };
 
 export default function RiskMap() {
@@ -51,9 +71,6 @@ export default function RiskMap() {
 
   const [hazards, setHazards] =
     useState<SiteHazards>(EMPTY_HAZARDS);
-
-  const [loadingHazards, setLoadingHazards] =
-    useState(false);
 
   async function handleMapClick(event: {
     lngLat: {
@@ -69,58 +86,61 @@ export default function RiskMap() {
       latitude,
     });
 
-    setLoadingHazards(true);
-    setHazards(EMPTY_HAZARDS);
+    // Set ALL rows to loading BEFORE starting requests
+    setHazards({
+      flood: {
+        ...createIdleHazard(),
+        status: "loading",
+      },
+      tsunami: {
+        ...createIdleHazard(),
+        status: "loading",
+      },
+      landslide: {
+        ...createIdleHazard(),
+        status: "loading",
+      },
+      earthquake: {
+        ...createIdleHazard(),
+        status: "loading",
+      },
+    });
 
-    try {
-      const hazardTypes: HazardType[] = [
-        "flood",
-        "tsunami",
-        "landslide",
-      ];
+    const hazardTypes: HazardType[] = [
+      "flood",
+      "tsunami",
+      "landslide",
+      "earthquake",
+    ];
 
-      const results = await Promise.allSettled(
-        hazardTypes.map((type) =>
-          fetchHazard(
-            type,
-            longitude,
-            latitude
-          )
-        )
-      );
-
-      const nextHazards: SiteHazards = {
-        flood: null,
-        tsunami: null,
-        landslide: null,
-      };
-
-      results.forEach((result, index) => {
-        const type = hazardTypes[index];
-
-        if (result.status === "fulfilled") {
-          nextHazards[type] = result.value;
-        } else {
-          nextHazards[type] = {
-            value: null,
-            category: "no-data",
-            hasData: false,
-            resolutionMeters: null,
-            source: "BNPB InaRISK",
-            error: "Unable to retrieve data",
-          };
-
-          console.error(
-            `${type} hazard request failed`,
-            result.reason
-          );
-        }
-      });
-
-      setHazards(nextHazards);
-    } finally {
-      setLoadingHazards(false);
-    }
+    hazardTypes.forEach((type) => {
+      fetchHazard(
+        type,
+        longitude,
+        latitude
+      )
+        .then((result) => {
+          setHazards((current) => ({
+            ...current,
+            [type]: {
+              ...result,
+              status: result.hasData
+                ? "success"
+                : "no-data",
+            },
+          }));
+        })
+        .catch(() => {
+          setHazards((current) => ({
+            ...current,
+            [type]: {
+              ...createIdleHazard(),
+              status: "error",
+              error: "Service unavailable",
+            },
+          }));
+        });
+    });
   }
 
   return (
@@ -183,38 +203,27 @@ export default function RiskMap() {
             />
           </div>
 
-          {/* Loading */}
-          {loadingHazards && (
-            <div className="mt-5">
-              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full w-1/2 animate-pulse rounded-full bg-slate-400" />
-              </div>
+          <div className="mt-5 space-y-3">
+            <HazardRow
+              label="Flood"
+              hazard={hazards.flood}
+            />
 
-              <p className="mt-2 text-xs text-slate-500">
-                Querying BNPB InaRISK...
-              </p>
-            </div>
-          )}
+            <HazardRow
+              label="Tsunami"
+              hazard={hazards.tsunami}
+            />
 
-          {/* Hazard results */}
-          {!loadingHazards && (
-            <div className="mt-5 space-y-3">
-              <HazardRow
-                label="Flood"
-                hazard={hazards.flood}
-              />
+            <HazardRow
+              label="Landslide"
+              hazard={hazards.landslide}
+            />
 
-              <HazardRow
-                label="Tsunami"
-                hazard={hazards.tsunami}
-              />
-
-              <HazardRow
-                label="Landslide"
-                hazard={hazards.landslide}
-              />
-            </div>
-          )}
+            <HazardRow
+              label="Earthquake"
+              hazard={hazards.earthquake}
+            />
+          </div>
 
           <p className="mt-4 border-t border-slate-100 pt-3 text-[10px] leading-4 text-slate-400">
             Source: BNPB InaRISK. Hazard values are
@@ -251,17 +260,17 @@ async function fetchHazard(
       ? data.value
       : null;
 
-  return {
-    value,
-    hasData: data.hasData === true,
-    resolutionMeters:
-      data.resolutionMeters ?? null,
-    source: data.source ?? "BNPB InaRISK",
-
-    // Temporary MVP interpretation.
-    // Replace with official per-hazard class breaks later.
-    category: classifyHazard(value),
-  };
+    return {
+      status: value !== null
+        ? "success"
+        : "no-data",
+      value,
+      hasData: data.hasData === true,
+      resolutionMeters:
+        data.resolutionMeters ?? null,
+      source: data.source ?? "BNPB InaRISK",
+      category: classifyHazard(value),
+    };
 }
 
 function classifyHazard(
@@ -287,88 +296,95 @@ function HazardRow({
   hazard,
 }: {
   label: string;
-  hazard: HazardResult | null;
-}) {
-  if (!hazard) {
+  hazard: HazardResult;
+  }) {
+    if (hazard.status === "loading") {
+      return (
+        <div className="rounded-xl border border-slate-200 p-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-slate-800">
+              {label}
+            </p>
+
+            <span className="text-xs text-slate-400">
+              Checking...
+            </span>
+          </div>
+
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full w-1/2 animate-pulse rounded-full bg-slate-300" />
+          </div>
+        </div>
+      );
+    }
+
+    if (hazard.status === "error") {
+      return (
+        <div className="rounded-xl border border-amber-100 bg-amber-50 p-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-slate-800">
+              {label}
+            </p>
+
+            <span className="text-xs text-amber-700">
+              Unavailable
+            </span>
+          </div>
+        </div>
+      );
+    }
+
+    if (hazard.status === "no-data") {
+      return (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-slate-700">
+              {label}
+            </p>
+
+            <HazardBadge category="no-data" />
+          </div>
+
+          <p className="mt-1 text-xs text-slate-500">
+            No mapped value at this location.
+          </p>
+        </div>
+      );
+    }
+
     return (
       <div className="rounded-xl border border-slate-200 p-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <p className="text-sm font-medium text-slate-800">
             {label}
           </p>
 
-          <span className="text-xs text-slate-400">
-            —
-          </span>
+          <HazardBadge
+            category={hazard.category}
+          />
+        </div>
+
+        <div className="mt-3 flex items-end justify-between">
+          <div>
+            <p className="text-2xl font-semibold text-slate-900">
+              {hazard.value?.toFixed(3)}
+            </p>
+
+            <p className="mt-1 text-[11px] text-slate-400">
+              Hazard index
+            </p>
+          </div>
+
+          {hazard.resolutionMeters && (
+            <p className="text-[11px] text-slate-400">
+              {hazard.resolutionMeters} m
+            </p>
+          )}
         </div>
       </div>
     );
   }
 
-  if (hazard.error) {
-    return (
-      <div className="rounded-xl border border-red-100 bg-red-50 p-3">
-        <p className="text-sm font-medium text-slate-800">
-          {label}
-        </p>
-
-        <p className="mt-1 text-xs text-red-600">
-          {hazard.error}
-        </p>
-      </div>
-    );
-  }
-
-  if (!hazard.hasData) {
-    return (
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-slate-700">
-            {label}
-          </p>
-
-          <HazardBadge category="no-data" />
-        </div>
-
-        <p className="mt-1 text-xs text-slate-500">
-          No mapped value at this location.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-xl border border-slate-200 p-3">
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm font-medium text-slate-800">
-          {label}
-        </p>
-
-        <HazardBadge
-          category={hazard.category}
-        />
-      </div>
-
-      <div className="mt-3 flex items-end justify-between">
-        <div>
-          <p className="text-2xl font-semibold text-slate-900">
-            {hazard.value?.toFixed(3)}
-          </p>
-
-          <p className="mt-1 text-[11px] text-slate-400">
-            Hazard index
-          </p>
-        </div>
-
-        {hazard.resolutionMeters && (
-          <p className="text-[11px] text-slate-400">
-            {hazard.resolutionMeters} m
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function HazardBadge({
   category,
