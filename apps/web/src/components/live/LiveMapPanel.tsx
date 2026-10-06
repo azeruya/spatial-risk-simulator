@@ -18,31 +18,33 @@ export default function LiveMapPanel({
   const [showSignificant, setShowSignificant] = useState(true);
   const [showFelt, setShowFelt] = useState(false);
   const [showLatest, setShowLatest] = useState(true);
+  const [selectedEarthquake, setSelectedEarthquake] =
+    useState<Earthquake | null>(null);
 
   const visibleEarthquakes = useMemo(() => {
     const items: Earthquake[] = [];
 
     if (showSignificant) {
-      items.push(...significantEarthquakes);
+        items.push(...significantEarthquakes);
     }
 
     if (showFelt) {
-      items.push(...feltEarthquakes);
+        items.push(...feltEarthquakes);
     }
 
     if (showLatest) {
-      items.push(latest);
+        items.push(latest);
     }
 
-    return items;
-  }, [
-    showSignificant,
-    showFelt,
-    showLatest,
-    significantEarthquakes,
-    feltEarthquakes,
-    latest,
-  ]);
+    return deduplicateEarthquakes(items);
+        }, [
+        showSignificant,
+        showFelt,
+        showLatest,
+        significantEarthquakes,
+        feltEarthquakes,
+        latest,
+    ]);
 
   return (
     <div className="flex h-full">
@@ -153,30 +155,44 @@ export default function LiveMapPanel({
           </p>
 
           <div className="mt-3 space-y-3">
-            {significantEarthquakes.slice(0, 5).map((earthquake) => (
-              <div
-                key={earthquake.id}
-                className="rounded-xl border border-slate-200 p-3"
-              >
-                <div className="flex items-center justify-between">
-                  <p className="font-semibold">
-                    M {earthquake.magnitude}
-                  </p>
+            {significantEarthquakes.slice(0, 5).map((earthquake) => {
+                const isSelected =
+                    selectedEarthquake?.id === earthquake.id;
 
-                  <p className="text-xs text-slate-400">
-                    {earthquake.depthKm} km
-                  </p>
-                </div>
+                return (
+                    <button
+                    key={earthquake.id}
+                    type="button"
+                    onClick={() => {
+                        console.log("Sidebar selected:", earthquake);
+                        setSelectedEarthquake(earthquake);
+                    }}
+                    className={`w-full cursor-pointer rounded-xl border p-3 text-left transition ${
+                        isSelected
+                        ? "border-blue-500 bg-blue-50"
+                        : "border-slate-200 hover:border-slate-400 hover:bg-slate-50"
+                    }`}
+                    >
+                    <div className="flex items-center justify-between">
+                        <p className="font-semibold">
+                        M {earthquake.magnitude}
+                        </p>
 
-                <p className="mt-2 text-xs leading-5 text-slate-600">
-                  {earthquake.region}
-                </p>
+                        <p className="text-xs text-slate-400">
+                        {earthquake.depthKm} km
+                        </p>
+                    </div>
 
-                <p className="mt-2 text-[11px] text-slate-400">
-                  {earthquake.date} · {earthquake.time}
-                </p>
-              </div>
-            ))}
+                    <p className="mt-2 text-xs leading-5 text-slate-600">
+                        {earthquake.region}
+                    </p>
+
+                    <p className="mt-2 text-[11px] text-slate-400">
+                        {earthquake.date} · {earthquake.time}
+                    </p>
+                    </button>
+                );
+            })}
           </div>
         </section>
 
@@ -187,7 +203,11 @@ export default function LiveMapPanel({
       </aside>
 
       <section className="min-w-0 flex-1">
-        <BaseMap earthquakes={visibleEarthquakes} />
+        <BaseMap 
+            earthquakes={visibleEarthquakes}
+            selectedEarthquake={selectedEarthquake}
+            onSelectEarthquake={setSelectedEarthquake} 
+        />
       </section>
     </div>
   );
@@ -239,4 +259,36 @@ function LegendItem({
       <span>{label}</span>
     </div>
   );
+}
+
+function deduplicateEarthquakes(
+  earthquakes: Earthquake[]
+): Earthquake[] {
+  const priority: Record<Earthquake["category"], number> = {
+    felt: 1,
+    significant: 2,
+    latest: 3,
+  };
+
+  const map = new Map<string, Earthquake>();
+
+  for (const earthquake of earthquakes) {
+    const key = [
+      earthquake.dateTime,
+      earthquake.latitude.toFixed(3),
+      earthquake.longitude.toFixed(3),
+    ].join("-");
+
+    const existing = map.get(key);
+
+    if (
+      !existing ||
+      priority[earthquake.category] >
+        priority[existing.category]
+    ) {
+      map.set(key, earthquake);
+    }
+  }
+
+  return Array.from(map.values());
 }

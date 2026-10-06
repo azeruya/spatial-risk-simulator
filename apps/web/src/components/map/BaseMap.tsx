@@ -1,16 +1,10 @@
 "use client";
 
-import Map, {
-  Marker,
-  Popup,
-} from "react-map-gl/maplibre";
-
-import { useState } from "react";
+import { useEffect, useRef } from "react";
+import Map, { Marker, Popup, type MapRef } from "react-map-gl/maplibre";
 
 import { setWorkerUrl } from "maplibre-gl";
-
 import type { Earthquake } from "@/types/earthquake";
-
 import "maplibre-gl/dist/maplibre-gl.css";
 
 setWorkerUrl(
@@ -19,14 +13,19 @@ setWorkerUrl(
 
 type BaseMapProps = {
   earthquakes?: Earthquake[];
+  selectedEarthquake?: Earthquake | null;
+  onSelectEarthquake?: (
+    earthquake: Earthquake | null
+  ) => void;
 };
 
 export default function BaseMap({
   earthquakes = [],
+  selectedEarthquake,
+  onSelectEarthquake,
 }: BaseMapProps) {
-  const [selectedEarthquake, setSelectedEarthquake] =
-    useState<Earthquake | null>(null);
-    
+  const mapRef = useRef<MapRef | null>(null);
+
   const validEarthquakes = earthquakes.filter(
     (earthquake) =>
         Number.isFinite(earthquake.latitude) &&
@@ -36,9 +35,23 @@ export default function BaseMap({
         earthquake.longitude >= -180 &&
         earthquake.longitude <= 180
     );
+  
+  useEffect(() => {
+    if (!selectedEarthquake) return;
+
+    mapRef.current?.flyTo({
+        center: [
+            selectedEarthquake.longitude,
+            selectedEarthquake.latitude,
+        ],
+        zoom: 7,
+        duration: 1200,
+    });
+    }, [selectedEarthquake]);
 
   return (
     <Map
+      ref={mapRef}
       initialViewState={{
         longitude: 118,
         latitude: -2,
@@ -62,38 +75,45 @@ export default function BaseMap({
             longitude={earthquake.longitude}
             latitude={earthquake.latitude}
             anchor="center"
-            >
-            <button
-                type="button"
-                onClick={(event) => {
-                event.stopPropagation();
-                setSelectedEarthquake(earthquake);
+              style={{
+                zIndex:
+                earthquake.category === "latest"
+                    ? 30
+                    : 20,
                 }}
-                className={`flex ${markerSize} items-center justify-center rounded-full border-2 border-white text-xs font-semibold text-white shadow-md transition hover:scale-110 ${getMarkerClass(
-                earthquake
-                )}`}
-                title={`M ${earthquake.magnitude}`}
             >
-                {earthquake.magnitude}
-            </button>
+                <button
+                    type="button"
+                    onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+
+                        console.log("Marker selected:", earthquake);
+
+                        onSelectEarthquake?.(earthquake);
+                    }}
+                    className={`relative z-20 flex ${markerSize} cursor-pointer items-center justify-center rounded-full border-2 border-white text-xs font-semibold text-white shadow-md transition hover:scale-110 ${getMarkerClass(
+                        earthquake
+                    )}`}
+                    title={`M ${earthquake.magnitude}`}
+                    >
+                    {earthquake.magnitude}
+                </button>
             </Marker>
         );
         })}
 
       {selectedEarthquake && (
         <Popup
-          longitude={
-            selectedEarthquake.longitude
-          }
-          latitude={
-            selectedEarthquake.latitude
-          }
-          anchor="bottom"
-          offset={20}
-          closeOnClick={false}
-          onClose={() =>
-            setSelectedEarthquake(null)
-          }
+            longitude={selectedEarthquake.longitude}
+            latitude={selectedEarthquake.latitude}
+            anchor="bottom"
+            offset={24}
+            closeOnClick={false}
+            closeButton
+            onClose={() =>
+            onSelectEarthquake?.(null)
+            }
         >
           <div className="min-w-52 p-1 text-slate-900">
             <div className="flex items-center justify-between gap-4">
