@@ -2,18 +2,21 @@
 
 import { useMemo, useState } from "react";
 import type { Earthquake } from "@/types/earthquake";
+import type { WeatherForecastResponse } from "@/types/weather";
 import BaseMap from "@/components/map/BaseMap";
 
 type LiveMapPanelProps = {
   latest: Earthquake;
   significantEarthquakes: Earthquake[];
   feltEarthquakes: Earthquake[];
+  weather: WeatherForecastResponse;
 };
 
 export default function LiveMapPanel({
   latest,
   significantEarthquakes,
   feltEarthquakes,
+  weather,
 }: LiveMapPanelProps) {
   const [showSignificant, setShowSignificant] = useState(true);
   const [showFelt, setShowFelt] = useState(false);
@@ -45,6 +48,9 @@ export default function LiveMapPanel({
         feltEarthquakes,
         latest,
     ]);
+
+  const currentWeather = weather.forecasts[0];
+  const nextForecasts = weather.forecasts.slice(1, 5);
 
   return (
     <div className="flex h-full">
@@ -95,6 +101,116 @@ export default function LiveMapPanel({
               </p>
             )}
           </div>
+        </section>
+
+        <section className="mt-8">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Weather forecast
+            </p>
+
+            {currentWeather ? (
+                <div className="mt-3 rounded-2xl border border-slate-200 p-4">
+                <div className="flex items-start justify-between gap-4">
+                    <div>
+                    <p className="text-3xl font-semibold">
+                        {currentWeather.temperatureC}°C
+                    </p>
+
+                    <p className="mt-1 text-sm font-medium text-slate-700">
+                        {currentWeather.weatherDescription}
+                    </p>
+                    </div>
+
+                    {currentWeather.imageUrl && (
+                    <img
+                        src={currentWeather.imageUrl}
+                        alt={currentWeather.weatherDescription}
+                        className="h-12 w-12"
+                    />
+                    )}
+                </div>
+
+                <p className="mt-4 text-xs text-slate-500">
+                    {weather.location.village}
+                    {weather.location.city
+                    ? `, ${weather.location.city}`
+                    : ""}
+                </p>
+
+                <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                    <WeatherStat
+                    label="Humidity"
+                    value={`${currentWeather.humidityPercent}%`}
+                    />
+
+                    <WeatherStat
+                    label="Wind"
+                    value={`${currentWeather.windSpeedKmh} km/h ${currentWeather.windDirection}`}
+                    />
+
+                    <WeatherStat
+                    label="Cloud cover"
+                    value={
+                        currentWeather.cloudCoverPercent !== undefined
+                        ? `${currentWeather.cloudCoverPercent}%`
+                        : "—"
+                    }
+                    />
+
+                    <WeatherStat
+                    label="Rain"
+                    value={
+                        currentWeather.precipitationMm !== undefined
+                        ? `${currentWeather.precipitationMm} mm`
+                        : "—"
+                    }
+                    />
+                </div>
+
+                <p className="mt-4 text-[11px] text-slate-400">
+                    Forecast for {formatForecastTime(currentWeather.dateTime)}
+                </p>
+
+                <div className="mt-4 border-t border-slate-100 pt-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    Next periods
+                    </p>
+
+                    <div className="mt-3 grid grid-cols-4 gap-2">
+                    {nextForecasts.map((forecast) => (
+                        <div
+                        key={forecast.dateTime}
+                        className="rounded-lg bg-slate-50 p-2 text-center"
+                        >
+                        <p className="text-[11px] font-medium text-slate-500">
+                            {formatForecastHour(forecast.dateTime)}
+                        </p>
+
+                        {forecast.imageUrl && (
+                            <img
+                            src={forecast.imageUrl}
+                            alt={forecast.weatherDescription}
+                            className="mx-auto mt-1 h-7 w-7"
+                            />
+                        )}
+
+                        <p className="mt-1 text-sm font-semibold text-slate-800">
+                            {forecast.temperatureC}°
+                        </p>
+                        </div>
+                    ))}
+                    </div>
+                </div>
+
+                <p className="mt-4 text-[10px] text-slate-400">
+                    Weather data source: BMKG
+                </p>
+                </div>
+            ) : (
+                <p className="mt-3 text-sm text-slate-500">
+                Weather forecast unavailable.
+                </p>
+            )}
         </section>
 
         <section className="mt-8">
@@ -291,4 +407,52 @@ function deduplicateEarthquakes(
   }
 
   return Array.from(map.values());
+}
+
+function WeatherStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-lg bg-slate-50 p-2.5">
+      <p className="text-slate-400">
+        {label}
+      </p>
+
+      <p className="mt-1 font-medium text-slate-700">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function formatForecastTime(dateTime: string) {
+  const date = new Date(dateTime.replace(" ", "T"));
+
+  if (Number.isNaN(date.getTime())) {
+    return dateTime;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date) + " WIB";
+}
+
+function formatForecastHour(dateTime: string) {
+  const date = new Date(dateTime.replace(" ", "T"));
+
+  if (Number.isNaN(date.getTime())) {
+    return dateTime;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
