@@ -26,7 +26,7 @@ export default function BaseMap({
 }: BaseMapProps) {
   const [selectedEarthquake, setSelectedEarthquake] =
     useState<Earthquake | null>(null);
-
+    
   const validEarthquakes = earthquakes.filter(
     (earthquake) =>
         Number.isFinite(earthquake.latitude) &&
@@ -36,7 +36,7 @@ export default function BaseMap({
         earthquake.longitude >= -180 &&
         earthquake.longitude <= 180
     );
-    
+
   return (
     <Map
       initialViewState={{
@@ -50,26 +50,35 @@ export default function BaseMap({
       }}
       mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
     >
-      {validEarthquakes.map((earthquake) => (
-        <Marker
-          key={earthquake.id}
-          longitude={earthquake.longitude}
-          latitude={earthquake.latitude}
-          anchor="center"
-        >
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setSelectedEarthquake(earthquake);
-            }}
-            className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-red-500 text-xs font-semibold text-white shadow-md transition hover:scale-110"
-            title={`M ${earthquake.magnitude}`}
-          >
-            {earthquake.magnitude}
-          </button>
-        </Marker>
-      ))}
+      {validEarthquakes.map((earthquake) => {
+        const markerSize =
+            earthquake.category === "latest"
+            ? "h-10 w-10"
+            : "h-8 w-8";
+
+        return (
+            <Marker
+            key={earthquake.id}
+            longitude={earthquake.longitude}
+            latitude={earthquake.latitude}
+            anchor="center"
+            >
+            <button
+                type="button"
+                onClick={(event) => {
+                event.stopPropagation();
+                setSelectedEarthquake(earthquake);
+                }}
+                className={`flex ${markerSize} items-center justify-center rounded-full border-2 border-white text-xs font-semibold text-white shadow-md transition hover:scale-110 ${getMarkerClass(
+                earthquake
+                )}`}
+                title={`M ${earthquake.magnitude}`}
+            >
+                {earthquake.magnitude}
+            </button>
+            </Marker>
+        );
+        })}
 
       {selectedEarthquake && (
         <Popup
@@ -123,4 +132,18 @@ export default function BaseMap({
       )}
     </Map>
   );
+}
+
+function getMarkerClass(earthquake: Earthquake) {
+  switch (earthquake.category) {
+    case "latest":
+      return "bg-blue-600 ring-4 ring-blue-100";
+
+    case "felt":
+      return "bg-amber-500";
+
+    case "significant":
+    default:
+      return "bg-red-500";
+  }
 }

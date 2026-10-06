@@ -1,0 +1,242 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import type { Earthquake } from "@/types/earthquake";
+import BaseMap from "@/components/map/BaseMap";
+
+type LiveMapPanelProps = {
+  latest: Earthquake;
+  significantEarthquakes: Earthquake[];
+  feltEarthquakes: Earthquake[];
+};
+
+export default function LiveMapPanel({
+  latest,
+  significantEarthquakes,
+  feltEarthquakes,
+}: LiveMapPanelProps) {
+  const [showSignificant, setShowSignificant] = useState(true);
+  const [showFelt, setShowFelt] = useState(false);
+  const [showLatest, setShowLatest] = useState(true);
+
+  const visibleEarthquakes = useMemo(() => {
+    const items: Earthquake[] = [];
+
+    if (showSignificant) {
+      items.push(...significantEarthquakes);
+    }
+
+    if (showFelt) {
+      items.push(...feltEarthquakes);
+    }
+
+    if (showLatest) {
+      items.push(latest);
+    }
+
+    return items;
+  }, [
+    showSignificant,
+    showFelt,
+    showLatest,
+    significantEarthquakes,
+    feltEarthquakes,
+    latest,
+  ]);
+
+  return (
+    <div className="flex h-full">
+      <aside className="w-80 shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-5">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">
+            Live Conditions
+          </h1>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Current disaster and environmental information.
+          </p>
+        </div>
+
+        <section className="mt-8">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Latest earthquake
+          </p>
+
+          <div className="mt-3 rounded-2xl border border-slate-200 p-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-3xl font-semibold">
+                  M {latest.magnitude}
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Depth {latest.depthKm} km
+                </p>
+              </div>
+
+              <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                Latest
+              </span>
+            </div>
+
+            <p className="mt-4 text-sm font-medium leading-5 text-slate-800">
+              {latest.region}
+            </p>
+
+            <p className="mt-2 text-xs text-slate-500">
+              {latest.date} · {latest.time}
+            </p>
+
+            {latest.potential && (
+              <p className="mt-3 text-xs text-slate-600">
+                {latest.potential}
+              </p>
+            )}
+          </div>
+        </section>
+
+        <section className="mt-8">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Layers
+          </p>
+
+          <div className="mt-3 space-y-3">
+            <LayerToggle
+              label="Significant earthquakes"
+              description={`${significantEarthquakes.length} events · M5.0+`}
+              checked={showSignificant}
+              onChange={setShowSignificant}
+            />
+
+            <LayerToggle
+              label="Felt earthquakes"
+              description={`${feltEarthquakes.length} recent events`}
+              checked={showFelt}
+              onChange={setShowFelt}
+            />
+
+            <LayerToggle
+              label="Latest earthquake"
+              description={`M ${latest.magnitude}`}
+              checked={showLatest}
+              onChange={setShowLatest}
+            />
+          </div>
+        </section>
+
+        <section className="mt-8">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Legend
+          </p>
+
+          <div className="mt-3 space-y-2 text-xs text-slate-600">
+            <LegendItem
+              className="bg-red-500"
+              label="M5.0+ earthquake"
+            />
+
+            <LegendItem
+              className="bg-amber-500"
+              label="Felt earthquake"
+            />
+
+            <LegendItem
+              className="bg-blue-600 ring-4 ring-blue-100"
+              label="Latest earthquake"
+            />
+          </div>
+        </section>
+
+        <section className="mt-8">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Recent significant events
+          </p>
+
+          <div className="mt-3 space-y-3">
+            {significantEarthquakes.slice(0, 5).map((earthquake) => (
+              <div
+                key={earthquake.id}
+                className="rounded-xl border border-slate-200 p-3"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold">
+                    M {earthquake.magnitude}
+                  </p>
+
+                  <p className="text-xs text-slate-400">
+                    {earthquake.depthKm} km
+                  </p>
+                </div>
+
+                <p className="mt-2 text-xs leading-5 text-slate-600">
+                  {earthquake.region}
+                </p>
+
+                <p className="mt-2 text-[11px] text-slate-400">
+                  {earthquake.date} · {earthquake.time}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <p className="mt-8 border-t border-slate-200 pt-4 text-[11px] leading-4 text-slate-400">
+          Earthquake data source: BMKG — Badan Meteorologi, Klimatologi,
+          dan Geofisika.
+        </p>
+      </aside>
+
+      <section className="min-w-0 flex-1">
+        <BaseMap earthquakes={visibleEarthquakes} />
+      </section>
+    </div>
+  );
+}
+
+function LayerToggle({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-200 p-3">
+      <div>
+        <p className="text-sm font-medium text-slate-800">
+          {label}
+        </p>
+
+        <p className="mt-1 text-xs text-slate-500">
+          {description}
+        </p>
+      </div>
+
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-1 h-4 w-4"
+      />
+    </label>
+  );
+}
+
+function LegendItem({
+  className,
+  label,
+}: {
+  className: string;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className={`h-3 w-3 rounded-full ${className}`} />
+      <span>{label}</span>
+    </div>
+  );
+}
