@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BNPB_TSUNAMI_HAZARD_SAMPLES_URL =
-  "https://gis.bnpb.go.id/server/rest/services/inarisk/INDEKS_BAHAYA_TSUNAMI/ImageServer/getSamples";
+const BNPB_LANDSLIDE_HAZARD_SAMPLES_URL =
+  "https://gis.bnpb.go.id/server/rest/services/inarisk/layer_bahaya_tanah_longsor/ImageServer/getSamples";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -68,22 +68,22 @@ export async function GET(request: NextRequest) {
 
   try {
     const response = await fetch(
-      `${BNPB_TSUNAMI_HAZARD_SAMPLES_URL}?${params.toString()}`,
+      `${BNPB_LANDSLIDE_HAZARD_SAMPLES_URL}?${params.toString()}`,
       {
         cache: "no-store",
       }
     );
 
     if (!response.ok) {
-      return NextResponse.json(
-        {
-          error: "BNPB tsunami hazard request failed",
-          status: response.status,
-        },
-        {
-          status: 502,
-        }
-      );
+        return NextResponse.json(
+            {
+            error: "BNPB landslide hazard request failed",
+            status: response.status,
+            },
+            {
+            status: 502,
+            }
+        );
     }
 
     const data = await response.json();
@@ -111,13 +111,13 @@ export async function GET(request: NextRequest) {
       resolutionMeters:
         data.samples?.[0]?.resolution ?? null,
       source: "BNPB InaRISK",
-      layer: "Tsunami hazard",
+      layer: "Landslide hazard",
     });
   } catch (error) {
     return NextResponse.json(
       {
         error:
-          "Unable to reach BNPB tsunami hazard service",
+          "Unable to reach BNPB landslide hazard service",
         details:
           error instanceof Error
             ? error.message

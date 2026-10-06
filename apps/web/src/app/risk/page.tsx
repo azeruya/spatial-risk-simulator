@@ -38,13 +38,13 @@ export default function RiskPage() {
 
             <div className="mt-3 space-y-3">
               <RiskLayer
-                label="Flood risk"
+                label="Flood hazard"
                 description="BNPB / InaRISK"
                 checked
               />
 
               <RiskLayer
-                label="Landslide risk"
+                label="Landslide hazard"
                 description="Coming next"
               />
 
