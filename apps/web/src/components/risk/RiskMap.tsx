@@ -1,28 +1,46 @@
 "use client";
 
 import { useState } from "react";
-
-import Map, {
-  Marker,
-} from "react-map-gl/maplibre";
-
+import Map, { Marker } from "react-map-gl/maplibre";
 import { setWorkerUrl } from "maplibre-gl";
 
 import "maplibre-gl/dist/maplibre-gl.css";
 
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 
-type FloodHazardCategory =
+type HazardCategory =
   | "low"
   | "moderate"
   | "high"
   | "no-data";
 
-type FloodHazardResult = {
+type HazardResult = {
   value: number | null;
-  category: FloodHazardCategory;
+  category: HazardCategory;
   hasData: boolean;
-  resolutionMeters?: number | null;
+  resolutionMeters: number | null;
+  source: string;
+  error?: string;
+};
+
+type SiteHazards = {
+  flood: HazardResult | null;
+  tsunami: HazardResult | null;
+  landslide: HazardResult | null;
+};
+
+type HazardType = keyof SiteHazards;
+
+const EMPTY_HAZARDS: SiteHazards = {
+  flood: null,
+  tsunami: null,
+  landslide: null,
+};
+
+const HAZARD_ENDPOINTS: Record<HazardType, string> = {
+  flood: "/api/bnpb/flood-hazard",
+  tsunami: "/api/bnpb/tsunami-hazard",
+  landslide: "/api/bnpb/landslide-hazard",
 };
 
 export default function RiskMap() {
@@ -31,14 +49,11 @@ export default function RiskMap() {
     latitude: number;
   } | null>(null);
 
-  const [floodHazard, setFloodHazard] =
-    useState<FloodHazardResult | null>(null);
+  const [hazards, setHazards] =
+    useState<SiteHazards>(EMPTY_HAZARDS);
 
-  const [loadingHazard, setLoadingHazard] =
+  const [loadingHazards, setLoadingHazards] =
     useState(false);
-
-  const [hazardError, setHazardError] =
-    useState<string | null>(null);
 
   async function handleMapClick(event: {
     lngLat: {
@@ -54,43 +69,57 @@ export default function RiskMap() {
       latitude,
     });
 
-    setLoadingHazard(true);
-    setFloodHazard(null);
-    setHazardError(null);
+    setLoadingHazards(true);
+    setHazards(EMPTY_HAZARDS);
 
     try {
-      const response = await fetch(
-        `/api/bnpb/flood-hazard?lon=${longitude}&lat=${latitude}`
+      const hazardTypes: HazardType[] = [
+        "flood",
+        "tsunami",
+        "landslide",
+      ];
+
+      const results = await Promise.allSettled(
+        hazardTypes.map((type) =>
+          fetchHazard(
+            type,
+            longitude,
+            latitude
+          )
+        )
       );
 
-      if (!response.ok) {
-        throw new Error(
-          "Failed to retrieve flood hazard data"
-        );
-      }
+      const nextHazards: SiteHazards = {
+        flood: null,
+        tsunami: null,
+        landslide: null,
+      };
 
-      const data = await response.json();
+      results.forEach((result, index) => {
+        const type = hazardTypes[index];
 
-      const value =
-        typeof data.value === "number"
-          ? data.value
-          : null;
+        if (result.status === "fulfilled") {
+          nextHazards[type] = result.value;
+        } else {
+          nextHazards[type] = {
+            value: null,
+            category: "no-data",
+            hasData: false,
+            resolutionMeters: null,
+            source: "BNPB InaRISK",
+            error: "Unable to retrieve data",
+          };
 
-      setFloodHazard({
-        value,
-        hasData: data.hasData,
-        resolutionMeters:
-          data.resolutionMeters ?? null,
-        category: classifyFloodHazard(value),
+          console.error(
+            `${type} hazard request failed`,
+            result.reason
+          );
+        }
       });
-    } catch (error) {
-      console.error(error);
 
-      setHazardError(
-        "Unable to retrieve flood hazard data."
-      );
+      setHazards(nextHazards);
     } finally {
-      setLoadingHazard(false);
+      setLoadingHazards(false);
     }
   }
 
@@ -124,32 +153,38 @@ export default function RiskMap() {
       {/* Instruction */}
       {!selectedPoint && (
         <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 px-4 py-2 text-sm text-slate-600 shadow-sm">
-          Click anywhere on the map to analyse flood hazard
+          Click anywhere on the map to analyse site hazards
         </div>
       )}
 
-      {/* Result */}
+      {/* Site analysis */}
       {selectedPoint && (
-        <div className="absolute bottom-6 right-6 w-72 rounded-2xl border border-slate-200 bg-white p-4 shadow-lg">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Site analysis
-              </p>
+        <div className="absolute bottom-6 right-6 w-80 rounded-2xl border border-slate-200 bg-white p-4 shadow-lg">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Site analysis
+            </p>
 
-              <p className="mt-1 text-sm font-medium text-slate-900">
-                Flood hazard
-              </p>
-            </div>
-
-            {floodHazard?.hasData && (
-              <HazardBadge
-                category={floodHazard.category}
-              />
-            )}
+            <p className="mt-1 text-sm font-medium text-slate-900">
+              Hazard profile
+            </p>
           </div>
 
-          {loadingHazard && (
+          {/* Coordinates */}
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <ResultStat
+              label="Longitude"
+              value={selectedPoint.longitude.toFixed(5)}
+            />
+
+            <ResultStat
+              label="Latitude"
+              value={selectedPoint.latitude.toFixed(5)}
+            />
+          </div>
+
+          {/* Loading */}
+          {loadingHazards && (
             <div className="mt-5">
               <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                 <div className="h-full w-1/2 animate-pulse rounded-full bg-slate-400" />
@@ -161,83 +196,77 @@ export default function RiskMap() {
             </div>
           )}
 
-          {!loadingHazard &&
-            floodHazard?.hasData && (
-              <>
-                <div className="mt-5">
-                  <p className="text-3xl font-semibold text-slate-900">
-                    {floodHazard.value?.toFixed(3)}
-                  </p>
+          {/* Hazard results */}
+          {!loadingHazards && (
+            <div className="mt-5 space-y-3">
+              <HazardRow
+                label="Flood"
+                hazard={hazards.flood}
+              />
 
-                  <p className="mt-1 text-xs text-slate-500">
-                    Hazard index
-                  </p>
-                </div>
+              <HazardRow
+                label="Tsunami"
+                hazard={hazards.tsunami}
+              />
 
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <ResultStat
-                    label="Longitude"
-                    value={selectedPoint.longitude.toFixed(
-                      5
-                    )}
-                  />
-
-                  <ResultStat
-                    label="Latitude"
-                    value={selectedPoint.latitude.toFixed(
-                      5
-                    )}
-                  />
-
-                  <ResultStat
-                    label="Resolution"
-                    value={
-                      floodHazard.resolutionMeters
-                        ? `${floodHazard.resolutionMeters} m`
-                        : "—"
-                    }
-                  />
-
-                  <ResultStat
-                    label="Source"
-                    value="BNPB InaRISK"
-                  />
-                </div>
-              </>
-            )}
-
-          {!loadingHazard &&
-            floodHazard &&
-            !floodHazard.hasData && (
-              <div className="mt-5 rounded-xl bg-slate-50 p-3">
-                <p className="text-sm font-medium text-slate-700">
-                  No mapped hazard value
-                </p>
-
-                <p className="mt-1 text-xs leading-5 text-slate-500">
-                  BNPB returned NoData for this
-                  100 m raster cell. Try another
-                  nearby location.
-                </p>
-              </div>
-            )}
-
-          {hazardError && (
-            <div className="mt-5 rounded-xl bg-red-50 p-3">
-              <p className="text-xs text-red-700">
-                {hazardError}
-              </p>
+              <HazardRow
+                label="Landslide"
+                hazard={hazards.landslide}
+              />
             </div>
           )}
+
+          <p className="mt-4 border-t border-slate-100 pt-3 text-[10px] leading-4 text-slate-400">
+            Source: BNPB InaRISK. Hazard values are
+            sampled from raster cells at the selected
+            location.
+          </p>
         </div>
       )}
     </div>
   );
 }
 
-function classifyFloodHazard(
+async function fetchHazard(
+  type: HazardType,
+  longitude: number,
+  latitude: number
+): Promise<HazardResult> {
+  const endpoint = HAZARD_ENDPOINTS[type];
+
+  const response = await fetch(
+    `${endpoint}?lon=${longitude}&lat=${latitude}`
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `${type} hazard request failed: ${response.status}`
+    );
+  }
+
+  const data = await response.json();
+
+  const value =
+    typeof data.value === "number"
+      ? data.value
+      : null;
+
+  return {
+    value,
+    hasData: data.hasData === true,
+    resolutionMeters:
+      data.resolutionMeters ?? null,
+    source: data.source ?? "BNPB InaRISK",
+
+    // Temporary MVP interpretation.
+    // Replace with official per-hazard class breaks later.
+    category: classifyHazard(value),
+  };
+}
+
+function classifyHazard(
   value: number | null
-): FloodHazardCategory {
+): HazardCategory {
   if (value === null) {
     return "no-data";
   }
@@ -253,16 +282,108 @@ function classifyFloodHazard(
   return "high";
 }
 
+function HazardRow({
+  label,
+  hazard,
+}: {
+  label: string;
+  hazard: HazardResult | null;
+}) {
+  if (!hazard) {
+    return (
+      <div className="rounded-xl border border-slate-200 p-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-slate-800">
+            {label}
+          </p>
+
+          <span className="text-xs text-slate-400">
+            —
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (hazard.error) {
+    return (
+      <div className="rounded-xl border border-red-100 bg-red-50 p-3">
+        <p className="text-sm font-medium text-slate-800">
+          {label}
+        </p>
+
+        <p className="mt-1 text-xs text-red-600">
+          {hazard.error}
+        </p>
+      </div>
+    );
+  }
+
+  if (!hazard.hasData) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-slate-700">
+            {label}
+          </p>
+
+          <HazardBadge category="no-data" />
+        </div>
+
+        <p className="mt-1 text-xs text-slate-500">
+          No mapped value at this location.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 p-3">
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-sm font-medium text-slate-800">
+          {label}
+        </p>
+
+        <HazardBadge
+          category={hazard.category}
+        />
+      </div>
+
+      <div className="mt-3 flex items-end justify-between">
+        <div>
+          <p className="text-2xl font-semibold text-slate-900">
+            {hazard.value?.toFixed(3)}
+          </p>
+
+          <p className="mt-1 text-[11px] text-slate-400">
+            Hazard index
+          </p>
+        </div>
+
+        {hazard.resolutionMeters && (
+          <p className="text-[11px] text-slate-400">
+            {hazard.resolutionMeters} m
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function HazardBadge({
   category,
 }: {
-  category: FloodHazardCategory;
+  category: HazardCategory;
 }) {
-  const styles = {
+  const styles: Record<
+    HazardCategory,
+    string
+  > = {
     low: "bg-emerald-50 text-emerald-700",
     moderate: "bg-amber-50 text-amber-700",
     high: "bg-red-50 text-red-700",
-    "no-data": "bg-slate-100 text-slate-600",
+    "no-data":
+      "bg-slate-100 text-slate-600",
   };
 
   return (
@@ -295,15 +416,18 @@ function ResultStat({
 }
 
 function formatCategory(
-  category: FloodHazardCategory
+  category: HazardCategory
 ) {
   switch (category) {
     case "low":
       return "Low";
+
     case "moderate":
       return "Moderate";
+
     case "high":
       return "High";
+
     default:
       return "No data";
   }
