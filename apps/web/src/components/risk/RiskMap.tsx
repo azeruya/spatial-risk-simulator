@@ -39,6 +39,33 @@ type SiteHazards = {
   earthquake: HazardResult;
 };
 
+type AreaHazardStatus =
+  | "idle"
+  | "loading"
+  | "success"
+  | "no-data"
+  | "error";
+
+type HazardAreaResult = {
+  status: AreaHazardStatus;
+  average: number | null;
+  maximum: number | null;
+  minimum: number | null;
+  validSamples: number;
+  totalSamples: number;
+  hasData: boolean;
+};
+
+type AreaHazardType =
+  | "flood"
+  | "tsunami"
+  | "landslide";
+
+type AreaHazards = Record<
+  AreaHazardType,
+  HazardAreaResult
+>;
+
 type HazardType = keyof SiteHazards;
 
 type AnalysisRadius = 250 | 500 | 1000;
@@ -51,6 +78,24 @@ const createIdleHazard = (): HazardResult => ({
   resolutionMeters: null,
   source: "BNPB InaRISK",
 });
+
+const createIdleAreaHazard =
+  (): HazardAreaResult => ({
+    status: "idle",
+    average: null,
+    maximum: null,
+    minimum: null,
+    validSamples: 0,
+    totalSamples: 0,
+    hasData: false,
+  });
+
+const createEmptyAreaHazards =
+  (): AreaHazards => ({
+    flood: createIdleAreaHazard(),
+    tsunami: createIdleAreaHazard(),
+    landslide: createIdleAreaHazard(),
+  });
 
 const EMPTY_HAZARDS: SiteHazards = {
   flood: createIdleHazard(),
@@ -66,6 +111,15 @@ const HAZARD_ENDPOINTS: Record<HazardType, string> = {
   earthquake: "/api/bnpb/earthquake-hazard",
 };
 
+const AREA_HAZARD_ENDPOINTS: Record<
+  AreaHazardType,
+  string
+> = {
+  flood: "/api/bnpb/flood-hazard/area",
+  tsunami: "/api/bnpb/tsunami-hazard/area",
+  landslide: "/api/bnpb/landslide-hazard/area",
+};
+
 export default function RiskMap() {
   const [selectedPoint, setSelectedPoint] = useState<{
     longitude: number;
@@ -78,13 +132,10 @@ export default function RiskMap() {
   const [radius, setRadius] =
     useState<AnalysisRadius>(500);
 
-  const [floodArea, setFloodArea] = useState<{
-    average: number | null;
-    maximum: number | null;
-    minimum: number | null;
-    validSamples: number;
-    totalSamples: number;
-  } | null>(null);
+  const [areaHazards, setAreaHazards] =
+    useState<AreaHazards>(
+      createEmptyAreaHazards()
+    );
 
   const analysisCircle = useMemo(() => {
     if (!selectedPoint) return null;
@@ -103,34 +154,70 @@ export default function RiskMap() {
   }, [selectedPoint, radius]);
 
   useEffect(() => {
-      if (!analysisCircle) return;
+    if (!analysisCircle) {
+      setAreaHazards(
+        createEmptyAreaHazards()
+      );
 
-      async function analyseArea() {
-        const response = await fetch(
-          "/api/bnpb/flood-hazard/area",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              polygon: analysisCircle,
-              sampleCount: 25,
-            }),
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const areaTypes: AreaHazardType[] = [
+      "flood",
+      "tsunami",
+      "landslide",
+    ];
+
+    // Set each area result to loading
+    setAreaHazards({
+      flood: {
+        ...createIdleAreaHazard(),
+        status: "loading",
+      },
+      tsunami: {
+        ...createIdleAreaHazard(),
+        status: "loading",
+      },
+      landslide: {
+        ...createIdleAreaHazard(),
+        status: "loading",
+      },
+    });
+
+    areaTypes.forEach((type) => {
+      fetchAreaHazard(
+        type,
+        analysisCircle,
+        controller.signal
+      )
+        .then((result) => {
+          setAreaHazards((current) => ({
+            ...current,
+            [type]: result,
+          }));
+        })
+        .catch((error) => {
+          if (error instanceof Error &&
+              error.name === "AbortError") {
+            return;
           }
-        );
 
-        if (!response.ok) {
-          return;
-        }
+          setAreaHazards((current) => ({
+            ...current,
+            [type]: {
+              ...createIdleAreaHazard(),
+              status: "error",
+            },
+          }));
+        });
+    });
 
-        const data = await response.json();
-
-        setFloodArea(data);
-      }
-
-      analyseArea();
-    }, [analysisCircle]);
+    return () => {
+      controller.abort();
+    };
+  }, [analysisCircle]);
 
   async function handleMapClick(event: {
     lngLat: {
@@ -202,15 +289,6 @@ export default function RiskMap() {
         });
     });
   }
-
-  const floodCoveragePercent =
-    floodArea && floodArea.totalSamples > 0
-      ? Math.round(
-          (floodArea.validSamples /
-            floodArea.totalSamples) *
-            100
-        )
-      : null;
 
   return (
     <div className="relative h-full w-full">
@@ -351,75 +429,38 @@ export default function RiskMap() {
                   hazard={hazards.flood}
                 />
 
-                {floodArea &&
-                  floodArea.average !== null && (
-                    <div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/70 p-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-medium text-blue-700">
-                            Flood · area analysis
-                          </p>
-
-                          <p className="mt-0.5 text-[10px] text-slate-500">
-                            Valid raster samples within{" "}
-                            {radius === 1000
-                              ? "1 km"
-                              : `${radius} m`}
-                          </p>
-                        </div>
-
-                        {floodCoveragePercent !== null && (
-                          <span className="rounded-full bg-white px-2 py-1 text-[10px] font-medium text-blue-700">
-                            {floodCoveragePercent}% coverage
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-3 gap-3">
-                        <div>
-                          <p className="text-[10px] text-slate-400">
-                            Avg. valid
-                          </p>
-
-                          <p className="mt-1 text-sm font-semibold text-slate-800">
-                            {floodArea.average.toFixed(3)}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-[10px] text-slate-400">
-                            Maximum
-                          </p>
-
-                          <p className="mt-1 text-sm font-semibold text-slate-800">
-                            {floodArea.maximum?.toFixed(3)}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-[10px] text-slate-400">
-                            Valid cells
-                          </p>
-
-                          <p className="mt-1 text-sm font-semibold text-slate-800">
-                            {floodArea.validSamples}/
-                            {floodArea.totalSamples}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                <HazardAreaSummary
+                  label="Flood"
+                  result={areaHazards.flood}
+                  radius={radius}
+                />
               </div>
 
-              <HazardRow
-                label="Tsunami · center point"
-                hazard={hazards.tsunami}
-              />
+              <div>
+                <HazardRow
+                  label="Tsunami · center point"
+                  hazard={hazards.tsunami}
+                />
 
-              <HazardRow
-                label="Landslide · center point"
-                hazard={hazards.landslide}
-              />
+                <HazardAreaSummary
+                  label="Tsunami"
+                  result={areaHazards.tsunami}
+                  radius={radius}
+                />
+              </div>
+
+              <div>
+                <HazardRow
+                  label="Landslide · center point"
+                  hazard={hazards.landslide}
+                />
+
+                <HazardAreaSummary
+                  label="Landslide"
+                  result={areaHazards.landslide}
+                  radius={radius}
+                />
+              </div>
 
               <HazardRow
                 label="Earthquake · center point"
@@ -476,6 +517,201 @@ async function fetchHazard(
       source: data.source ?? "BNPB InaRISK",
       category: classifyHazard(value),
     };
+}
+
+async function fetchAreaHazard(
+  type: AreaHazardType,
+  polygon: GeoJSON.Feature<GeoJSON.Polygon>,
+  signal?: AbortSignal
+): Promise<HazardAreaResult> {
+  const endpoint =
+    AREA_HAZARD_ENDPOINTS[type];
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      polygon,
+      sampleCount: 25,
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `${type} area hazard request failed: ${response.status}`
+    );
+  }
+
+  const data = await response.json();
+
+  const hasData =
+    data.hasData === true &&
+    typeof data.average === "number";
+
+  return {
+    status: hasData
+      ? "success"
+      : "no-data",
+
+    average:
+      typeof data.average === "number"
+        ? data.average
+        : null,
+
+    maximum:
+      typeof data.maximum === "number"
+        ? data.maximum
+        : null,
+
+    minimum:
+      typeof data.minimum === "number"
+        ? data.minimum
+        : null,
+
+    validSamples:
+      data.validSamples ?? 0,
+
+    totalSamples:
+      data.totalSamples ?? 0,
+
+    hasData,
+  };
+}
+
+function HazardAreaSummary({
+  label,
+  result,
+  radius,
+}: {
+  label: string;
+  result: HazardAreaResult;
+  radius: AnalysisRadius;
+}) {
+  const radiusLabel =
+    radius === 1000
+      ? "1 km"
+      : `${radius} m`;
+
+  if (result.status === "idle") {
+    return null;
+  }
+
+  if (result.status === "loading") {
+    return (
+      <div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium text-blue-700">
+              {label} · area analysis
+            </p>
+
+            <p className="mt-0.5 text-[10px] text-slate-500">
+              Analysing raster samples within{" "}
+              {radiusLabel}
+            </p>
+          </div>
+
+          <span className="text-[10px] text-blue-600">
+            Checking...
+          </span>
+        </div>
+
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-blue-100">
+          <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-300" />
+        </div>
+      </div>
+    );
+  }
+
+  if (result.status === "error") {
+    return (
+      <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50 p-3">
+        <p className="text-xs font-medium text-slate-700">
+          {label} · area analysis
+        </p>
+
+        <p className="mt-1 text-[10px] text-amber-700">
+          Area data temporarily unavailable.
+        </p>
+      </div>
+    );
+  }
+
+  if (
+    result.status === "no-data" ||
+    !result.hasData
+  ) {
+    return (
+      <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <p className="text-xs font-medium text-slate-700">
+          {label} · area analysis
+        </p>
+
+        <p className="mt-1 text-[10px] text-slate-500">
+          No valid mapped samples within{" "}
+          {radiusLabel}.
+        </p>
+      </div>
+    );
+  }
+
+  const coveragePercent =
+    result.totalSamples > 0
+      ? Math.round(
+          (result.validSamples /
+            result.totalSamples) *
+            100
+        )
+      : 0;
+
+  return (
+    <div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/70 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-xs font-medium text-blue-700">
+            {label} · area analysis
+          </p>
+
+          <p className="mt-0.5 text-[10px] text-slate-500">
+            Valid raster samples within{" "}
+            {radiusLabel}
+          </p>
+        </div>
+
+        <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-blue-700">
+          {coveragePercent}% coverage
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-3">
+        <AreaMetric
+          label="Avg. valid"
+          value={
+            result.average !== null
+              ? result.average.toFixed(3)
+              : "—"
+          }
+        />
+
+        <AreaMetric
+          label="Maximum"
+          value={
+            result.maximum !== null
+              ? result.maximum.toFixed(3)
+              : "—"
+          }
+        />
+
+        <AreaMetric
+          label="Valid cells"
+          value={`${result.validSamples}/${result.totalSamples}`}
+        />
+      </div>
+    </div>
+  );
 }
 
 function classifyHazard(
@@ -652,4 +888,24 @@ function formatCategory(
     default:
       return "No data";
   }
+}
+
+function AreaMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] text-slate-400">
+        {label}
+      </p>
+
+      <p className="mt-1 text-sm font-semibold text-slate-800">
+        {value}
+      </p>
+    </div>
+  );
 }
