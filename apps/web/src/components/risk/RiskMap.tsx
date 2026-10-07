@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import Map, { Marker } from "react-map-gl/maplibre";
+import { useMemo, useState, useEffect } from "react";
+import Map, { Marker, Source, Layer } from "react-map-gl/maplibre";
 import { setWorkerUrl } from "maplibre-gl";
 
 import "maplibre-gl/dist/maplibre-gl.css";
+import { circle } from "@turf/circle";
 
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 
@@ -40,6 +41,8 @@ type SiteHazards = {
 
 type HazardType = keyof SiteHazards;
 
+type AnalysisRadius = 250 | 500 | 1000;
+
 const createIdleHazard = (): HazardResult => ({
   status: "idle",
   value: null,
@@ -71,6 +74,63 @@ export default function RiskMap() {
 
   const [hazards, setHazards] =
     useState<SiteHazards>(EMPTY_HAZARDS);
+
+  const [radius, setRadius] =
+    useState<AnalysisRadius>(500);
+
+  const [floodArea, setFloodArea] = useState<{
+    average: number | null;
+    maximum: number | null;
+    minimum: number | null;
+    validSamples: number;
+    totalSamples: number;
+  } | null>(null);
+
+  const analysisCircle = useMemo(() => {
+    if (!selectedPoint) return null;
+
+    return circle(
+      [
+        selectedPoint.longitude,
+        selectedPoint.latitude,
+      ],
+      radius / 1000,
+      {
+        steps: 64,
+        units: "kilometers",
+      }
+    );
+  }, [selectedPoint, radius]);
+
+  useEffect(() => {
+      if (!analysisCircle) return;
+
+      async function analyseArea() {
+        const response = await fetch(
+          "/api/bnpb/flood-hazard/area",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              polygon: analysisCircle,
+              sampleCount: 25,
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json();
+
+        setFloodArea(data);
+      }
+
+      analyseArea();
+    }, [analysisCircle]);
 
   async function handleMapClick(event: {
     lngLat: {
@@ -143,6 +203,15 @@ export default function RiskMap() {
     });
   }
 
+  const floodCoveragePercent =
+    floodArea && floodArea.totalSamples > 0
+      ? Math.round(
+          (floodArea.validSamples /
+            floodArea.totalSamples) *
+            100
+        )
+      : null;
+
   return (
     <div className="relative h-full w-full">
       <Map
@@ -159,6 +228,32 @@ export default function RiskMap() {
         onClick={handleMapClick}
         cursor="crosshair"
       >
+        {analysisCircle && (
+          <Source
+            id="analysis-area"
+            type="geojson"
+            data={analysisCircle}
+          >
+            <Layer
+              id="analysis-area-fill"
+              type="fill"
+              paint={{
+                "fill-color": "#2563eb",
+                "fill-opacity": 0.08,
+              }}
+            />
+
+            <Layer
+              id="analysis-area-outline"
+              type="line"
+              paint={{
+                "line-color": "#2563eb",
+                "line-width": 2,
+              }}
+            />
+          </Source>
+        )}
+
         {selectedPoint && (
           <Marker
             longitude={selectedPoint.longitude}
@@ -173,62 +268,172 @@ export default function RiskMap() {
       {/* Instruction */}
       {!selectedPoint && (
         <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 px-4 py-2 text-sm text-slate-600 shadow-sm">
-          Click anywhere on the map to analyse site hazards
+          Click anywhere on the map to analyse hazards around a site
         </div>
       )}
 
       {/* Site analysis */}
       {selectedPoint && (
         <div className="absolute bottom-6 right-6 w-80 rounded-2xl border border-slate-200 bg-white p-4 shadow-lg">
+          {/* Header */}
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
               Site analysis
             </p>
 
             <p className="mt-1 text-sm font-medium text-slate-900">
-              Hazard profile
+              Multi-hazard profile
             </p>
           </div>
 
-          {/* Coordinates */}
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <ResultStat
-              label="Longitude"
-              value={selectedPoint.longitude.toFixed(5)}
-            />
+          {/* Location */}
+          <div className="mt-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Selected location
+            </p>
 
-            <ResultStat
-              label="Latitude"
-              value={selectedPoint.latitude.toFixed(5)}
-            />
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <ResultStat
+                label="Longitude"
+                value={selectedPoint.longitude.toFixed(5)}
+              />
+
+              <ResultStat
+                label="Latitude"
+                value={selectedPoint.latitude.toFixed(5)}
+              />
+            </div>
           </div>
 
-          <div className="mt-5 space-y-3">
-            <HazardRow
-              label="Flood"
-              hazard={hazards.flood}
-            />
+          {/* Radius */}
+          <div className="mt-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-slate-600">
+                Analysis radius
+              </p>
 
-            <HazardRow
-              label="Tsunami"
-              hazard={hazards.tsunami}
-            />
+              <p className="text-[11px] text-slate-400">
+                Area context
+              </p>
+            </div>
 
-            <HazardRow
-              label="Landslide"
-              hazard={hazards.landslide}
-            />
-
-            <HazardRow
-              label="Earthquake"
-              hazard={hazards.earthquake}
-            />
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {[250, 500, 1000].map((value) => (
+                <button
+                  key={value}
+                  onClick={() =>
+                    setRadius(value as AnalysisRadius)
+                  }
+                  className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                    radius === value
+                      ? "border-blue-500 bg-blue-50 text-blue-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {value === 1000
+                    ? "1 km"
+                    : `${value} m`}
+                </button>
+              ))}
+            </div>
           </div>
 
+          {/* Hazards */}
+          <div className="mt-5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Hazard assessment
+            </p>
+
+            <div className="mt-2 space-y-3">
+              <div>
+                <HazardRow
+                  label="Flood · center point"
+                  hazard={hazards.flood}
+                />
+
+                {floodArea &&
+                  floodArea.average !== null && (
+                    <div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/70 p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium text-blue-700">
+                            Flood · area analysis
+                          </p>
+
+                          <p className="mt-0.5 text-[10px] text-slate-500">
+                            Valid raster samples within{" "}
+                            {radius === 1000
+                              ? "1 km"
+                              : `${radius} m`}
+                          </p>
+                        </div>
+
+                        {floodCoveragePercent !== null && (
+                          <span className="rounded-full bg-white px-2 py-1 text-[10px] font-medium text-blue-700">
+                            {floodCoveragePercent}% coverage
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-3 gap-3">
+                        <div>
+                          <p className="text-[10px] text-slate-400">
+                            Avg. valid
+                          </p>
+
+                          <p className="mt-1 text-sm font-semibold text-slate-800">
+                            {floodArea.average.toFixed(3)}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] text-slate-400">
+                            Maximum
+                          </p>
+
+                          <p className="mt-1 text-sm font-semibold text-slate-800">
+                            {floodArea.maximum?.toFixed(3)}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] text-slate-400">
+                            Valid cells
+                          </p>
+
+                          <p className="mt-1 text-sm font-semibold text-slate-800">
+                            {floodArea.validSamples}/
+                            {floodArea.totalSamples}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+              </div>
+
+              <HazardRow
+                label="Tsunami · center point"
+                hazard={hazards.tsunami}
+              />
+
+              <HazardRow
+                label="Landslide · center point"
+                hazard={hazards.landslide}
+              />
+
+              <HazardRow
+                label="Earthquake · center point"
+                hazard={hazards.earthquake}
+              />
+            </div>
+          </div>
+
+          {/* Source note */}
           <p className="mt-4 border-t border-slate-100 pt-3 text-[10px] leading-4 text-slate-400">
-            Source: BNPB InaRISK. Hazard values are
-            sampled from raster cells at the selected
-            location.
+            Source: BNPB InaRISK. Center-point values represent
+            the raster cell at the selected location. Area
+            statistics summarize valid raster samples within the
+            selected radius.
           </p>
         </div>
       )}
