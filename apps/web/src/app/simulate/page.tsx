@@ -9,6 +9,12 @@ import ImpactPanel from "@/components/simulate/ImpactPanel";
 import { SimulationBaseline } from "@/types/simulation";
 import { simulateDevelopment, SimulationResult } from "@/lib/simulation";
 
+type RetentionLevel =
+  | "none"
+  | "low"
+  | "moderate"
+  | "high";
+
 export default function SimulatePage() {
   const [selectedSite, setSelectedSite] =
     useState<SelectedSite | null>(null);
@@ -31,6 +37,21 @@ export default function SimulatePage() {
     additionalPopulation,
     setAdditionalPopulation,
   ] = useState(1500);
+
+  const [
+    permeableSurfacePercent,
+    setPermeableSurfacePercent,
+  ] = useState(0);
+
+  const [
+    greenInfrastructurePercent,
+    setGreenInfrastructurePercent,
+  ] = useState(0);
+
+  const [
+    retentionLevel,
+    setRetentionLevel,
+  ] = useState<RetentionLevel>("none");
 
   const analysisCircle = useMemo(() => {
     if (!selectedSite) return null;
@@ -58,6 +79,13 @@ export default function SimulatePage() {
       floodCoveragePercent: null,
     });
 
+  const retentionFactor = {
+    none: 0,
+    low: 0.1,
+    moderate: 0.2,
+    high: 0.3,
+  }[retentionLevel];
+
   const simulationResult = useMemo(() => {
     return simulateDevelopment({
       baselinePopulation:
@@ -67,15 +95,18 @@ export default function SimulatePage() {
         baseline.floodAverage,
 
       projectAreaHa,
-
       imperviousPercent,
       greenPercent,
-
       additionalPopulation,
 
-      // MVP assumptions for now
       baselineImperviousPercent: 40,
       baselineGreenPercent: 40,
+
+      mitigation: {
+        permeableSurfacePercent,
+        greenInfrastructurePercent,
+        retentionFactor,
+      },
     });
   }, [
     baseline.population,
@@ -84,6 +115,9 @@ export default function SimulatePage() {
     imperviousPercent,
     greenPercent,
     additionalPopulation,
+    permeableSurfacePercent,
+    greenInfrastructurePercent,
+    retentionFactor,
   ]);
 
     useEffect(() => {
@@ -256,22 +290,33 @@ export default function SimulatePage() {
           <ScenarioPanel
             scenarioType={scenarioType}
             setScenarioType={setScenarioType}
+
             projectAreaHa={projectAreaHa}
             setProjectAreaHa={setProjectAreaHa}
-            imperviousPercent={
-              imperviousPercent
-            }
-            setImperviousPercent={
-              setImperviousPercent
-            }
+
+            imperviousPercent={imperviousPercent}
+            setImperviousPercent={setImperviousPercent}
+
             greenPercent={greenPercent}
             setGreenPercent={setGreenPercent}
-            additionalPopulation={
-              additionalPopulation
+
+            additionalPopulation={additionalPopulation}
+            setAdditionalPopulation={setAdditionalPopulation}
+
+            permeableSurfacePercent={permeableSurfacePercent}
+            setPermeableSurfacePercent={
+              setPermeableSurfacePercent
             }
-            setAdditionalPopulation={
-              setAdditionalPopulation
+
+            greenInfrastructurePercent={
+              greenInfrastructurePercent
             }
+            setGreenInfrastructurePercent={
+              setGreenInfrastructurePercent
+            }
+
+            retentionLevel={retentionLevel}
+            setRetentionLevel={setRetentionLevel}
           />
 
           {/* Map */}
@@ -292,6 +337,14 @@ export default function SimulatePage() {
             additionalPopulation={additionalPopulation}
             baseline={baseline}
             simulation={simulationResult}
+
+            permeableSurfacePercent={
+              permeableSurfacePercent
+            }
+            greenInfrastructurePercent={
+              greenInfrastructurePercent
+            }
+            retentionLevel={retentionLevel}
           />
         </div>
       </div>

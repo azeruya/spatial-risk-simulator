@@ -1,17 +1,16 @@
 export type SimulationInput = {
-  // Context from Risk / baseline APIs
   baselinePopulation: number | null;
   floodHazardAverage: number | null;
 
-  // Proposed development
   projectAreaHa: number;
   imperviousPercent: number;
   greenPercent: number;
   additionalPopulation: number;
 
-  // Current-site assumptions for MVP
   baselineImperviousPercent: number;
   baselineGreenPercent: number;
+
+  mitigation: MitigationInput;
 };
 
 export type SimulationResult = {
@@ -51,6 +50,15 @@ export type SimulationResult = {
     | "low"
     | "moderate"
     | "high";
+
+  mitigatedRunoffPressure: number;
+  mitigationReductionPercent: number;
+};
+
+export type MitigationInput = {
+  permeableSurfacePercent: number;
+  greenInfrastructurePercent: number;
+  retentionFactor: number;
 };
 
 export function simulateDevelopment(
@@ -65,6 +73,7 @@ export function simulateDevelopment(
     additionalPopulation,
     baselineImperviousPercent,
     baselineGreenPercent,
+    mitigation,   
   } = input;
 
   /*
@@ -119,6 +128,17 @@ export function simulateDevelopment(
       greenPercent
     );
 
+  const permeableReduction =
+    mitigation.permeableSurfacePercent / 100;
+
+  const greenReduction =
+    mitigation.greenInfrastructurePercent / 100;
+
+  const effectiveScenarioRunoffCoefficient =
+    scenarioRunoffCoefficient *
+    (1 - permeableReduction * 0.35) *
+    (1 - greenReduction * 0.25);
+
   /*
    * Existing mapped flood hazard acts as
    * contextual sensitivity.
@@ -146,6 +166,11 @@ export function simulateDevelopment(
   const scenarioRunoffPressure =
     scenarioRunoffCoefficient *
     (0.5 + floodContext * 0.5);
+
+  const mitigatedRunoffPressure =
+    effectiveScenarioRunoffCoefficient *
+    (0.5 + floodContext * 0.5) *
+    (1 - mitigation.retentionFactor);
 
   const runoffChangePercent =
     baselineRunoffPressure > 0
@@ -175,6 +200,14 @@ export function simulateDevelopment(
       floodContext
     );
 
+  const mitigationReductionPercent =
+    scenarioRunoffPressure > 0
+      ? ((scenarioRunoffPressure -
+          mitigatedRunoffPressure) /
+          scenarioRunoffPressure) *
+        100
+      : 0;
+
   return {
     projectAreaHa,
 
@@ -202,6 +235,9 @@ export function simulateDevelopment(
 
     runoffDirection,
     impactLevel,
+    
+    mitigatedRunoffPressure,
+    mitigationReductionPercent,
   };
 }
 

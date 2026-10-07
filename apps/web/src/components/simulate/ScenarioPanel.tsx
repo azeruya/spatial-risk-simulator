@@ -8,6 +8,12 @@ export type ScenarioType =
   | "densification"
   | "green-retrofit";
 
+export type RetentionLevel =
+  | "none"
+  | "low"
+  | "moderate"
+  | "high";
+
 type ScenarioPanelProps = {
   scenarioType: ScenarioType;
   setScenarioType: (
@@ -33,6 +39,18 @@ type ScenarioPanelProps = {
   setAdditionalPopulation: (
     value: number
   ) => void;
+
+  permeableSurfacePercent: number;
+  setPermeableSurfacePercent:
+    (value: number) => void;
+
+  greenInfrastructurePercent: number;
+  setGreenInfrastructurePercent:
+    (value: number) => void;
+
+  retentionLevel: RetentionLevel;
+  setRetentionLevel:
+    (value: RetentionLevel) => void;
 };
 
 export default function ScenarioPanel({
@@ -46,6 +64,12 @@ export default function ScenarioPanel({
   setGreenPercent,
   additionalPopulation,
   setAdditionalPopulation,
+  permeableSurfacePercent,
+  setPermeableSurfacePercent,
+  greenInfrastructurePercent,
+  setGreenInfrastructurePercent,
+  retentionLevel,
+  setRetentionLevel,
 }: ScenarioPanelProps) {
   return (
     <aside className="overflow-y-auto border-r border-slate-200 bg-white p-5">
@@ -187,6 +211,63 @@ export default function ScenarioPanel({
           }
           className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-medium text-slate-800 outline-none focus:border-blue-500"
         />
+
+            <div className="mt-8 border-t border-slate-100 pt-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Mitigation
+            </p>
+
+            <div className="mt-4 space-y-5">
+                <ScenarioSlider
+                label="Permeable surface"
+                description="Replace part of paved area with permeable materials"
+                value={permeableSurfacePercent}
+                onChange={setPermeableSurfacePercent}
+                />
+
+                <ScenarioSlider
+                label="Green infrastructure"
+                description="Rain gardens, bioswales and vegetated surfaces"
+                value={greenInfrastructurePercent}
+                onChange={
+                    setGreenInfrastructurePercent
+                }
+                />
+
+                <div>
+                <label className="text-xs font-medium text-slate-600">
+                    Retention capacity
+                </label>
+
+                <select
+                    value={retentionLevel}
+                    onChange={(event) =>
+                    setRetentionLevel(
+                        event.target
+                        .value as RetentionLevel
+                    )
+                    }
+                    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800 outline-none focus:border-blue-500"
+                >
+                    <option value="none">
+                    None
+                    </option>
+
+                    <option value="low">
+                    Low
+                    </option>
+
+                    <option value="moderate">
+                    Moderate
+                    </option>
+
+                    <option value="high">
+                    High
+                    </option>
+                </select>
+                </div>
+            </div>
+        </div>
       </div>
     </aside>
   );
