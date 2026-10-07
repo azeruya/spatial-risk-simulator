@@ -70,6 +70,19 @@ type HazardType = keyof SiteHazards;
 
 type AnalysisRadius = 250 | 500 | 1000;
 
+type PopulationExposure = {
+  status:
+    | "idle"
+    | "loading"
+    | "success"
+    | "error";
+
+  population: number | null;
+  areaKm2: number | null;
+  densityPerKm2: number | null;
+  year: number | null;
+};
+
 const createIdleHazard = (): HazardResult => ({
   status: "idle",
   value: null,
@@ -137,6 +150,15 @@ export default function RiskMap() {
       createEmptyAreaHazards()
     );
 
+  const [populationExposure, setPopulationExposure] =
+    useState<PopulationExposure>({
+      status: "idle",
+      population: null,
+      areaKm2: null,
+      densityPerKm2: null,
+      year: null,
+    });
+
   const analysisCircle = useMemo(() => {
     if (!selectedPoint) return null;
 
@@ -152,6 +174,12 @@ export default function RiskMap() {
       }
     );
   }, [selectedPoint, radius]);
+
+  const analysisAreaKm2 = useMemo(() => {
+    const radiusKm = radius / 1000;
+
+    return Math.PI * radiusKm * radiusKm;
+  }, [radius]);
 
   useEffect(() => {
     if (!analysisCircle) {
@@ -218,6 +246,91 @@ export default function RiskMap() {
       controller.abort();
     };
   }, [analysisCircle]);
+
+  useEffect(() => {
+    if (!analysisCircle) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    setPopulationExposure({
+      status: "loading",
+      population: null,
+      areaKm2: analysisAreaKm2,
+      densityPerKm2: null,
+      year: 2025,
+    });
+
+    async function loadPopulation() {
+      try {
+        const response = await fetch(
+          "/api/population/exposure",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              polygon: analysisCircle,
+              year: 2025,
+            }),
+            signal: controller.signal,
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            "Population request failed"
+          );
+        }
+
+        const data = await response.json();
+
+        const population =
+          typeof data.population === "number"
+            ? data.population
+            : null;
+
+        const density =
+          population !== null &&
+          analysisAreaKm2 > 0
+            ? population /
+              analysisAreaKm2
+            : null;
+
+        setPopulationExposure({
+          status: "success",
+          population,
+          areaKm2: analysisAreaKm2,
+          densityPerKm2: density,
+          year: data.year ?? 2025,
+        });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.name === "AbortError"
+        ) {
+          return;
+        }
+
+        setPopulationExposure({
+          status: "error",
+          population: null,
+          areaKm2: analysisAreaKm2,
+          densityPerKm2: null,
+          year: 2025,
+        });
+      }
+    }
+
+    loadPopulation();
+
+    return () => {
+      controller.abort();
+    };
+  }, [analysisCircle, analysisAreaKm2]);
 
   async function handleMapClick(event: {
     lngLat: {
@@ -290,6 +403,50 @@ export default function RiskMap() {
     });
   }
 
+  const mappedAreaHazards = (
+    ["flood", "tsunami", "landslide"] as const
+  ).filter(
+    (type) =>
+      areaHazards[type].status === "success" &&
+      areaHazards[type].hasData
+  );
+
+  const mappedHazardNames =
+    mappedAreaHazards.map(formatHazardName);
+
+  const population =
+    populationExposure.status === "success"
+      ? populationExposure.population
+      : null;
+
+  const radiusLabel =
+    radius === 1000
+      ? "1 km"
+      : `${radius} m`;
+
+  const mappedHazardText =
+  formatHazardList(mappedHazardNames);
+
+  const hazardSummary =
+    mappedHazardNames.length > 0
+      ? `${mappedHazardText} hazard data ${
+          mappedHazardNames.length === 1
+            ? "is"
+            : "are"
+        } present within the selected area.`
+      : "No mapped hazard samples were available within the selected area.";
+
+  const keyConcern =
+  population !== null &&
+  population > 0 &&
+  mappedAreaHazards.length > 0
+    ? `Mapped hazard overlaps an area containing an estimated ${Math.round(
+        population
+      ).toLocaleString()} people within ${radiusLabel}.`
+    : mappedAreaHazards.length > 0
+      ? "Mapped hazard is present within the selected analysis area."
+      : "Insufficient mapped hazard data to identify a key concern.";
+
   return (
     <div className="relative h-full w-full">
       <Map
@@ -352,7 +509,7 @@ export default function RiskMap() {
 
       {/* Site analysis */}
       {selectedPoint && (
-        <div className="absolute bottom-6 right-6 w-80 rounded-2xl border border-slate-200 bg-white p-4 shadow-lg">
+        <div className="absolute bottom-6 right-6 max-h-[calc(100vh-120px)] w-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-lg">
           {/* Header */}
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
@@ -466,6 +623,107 @@ export default function RiskMap() {
                 label="Earthquake · center point"
                 hazard={hazards.earthquake}
               />
+            </div>
+          </div>
+
+          <div className="mt-5 border-t border-slate-100 pt-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Exposure
+            </p>
+
+            {populationExposure.status ===
+              "loading" && (
+              <div className="mt-2 rounded-xl border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">
+                  Estimating population within the selected area...
+                </p>
+              </div>
+            )}
+
+            {populationExposure.status ===
+              "success" && (
+              <div className="mt-2 rounded-xl border border-slate-200 p-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <AreaMetric
+                    label="Population"
+                    value={
+                      populationExposure.population !==
+                      null
+                        ? Math.round(
+                            populationExposure.population
+                          ).toLocaleString()
+                        : "—"
+                    }
+                  />
+
+                  <AreaMetric
+                    label="Density"
+                    value={
+                      populationExposure.densityPerKm2 !==
+                      null
+                        ? `${Math.round(
+                            populationExposure.densityPerKm2
+                          ).toLocaleString()}/km²`
+                        : "—"
+                    }
+                  />
+
+                  <AreaMetric
+                    label="Area"
+                    value={
+                      populationExposure.areaKm2 !==
+                      null
+                        ? `${populationExposure.areaKm2.toFixed(
+                            2
+                          )} km²`
+                        : "—"
+                    }
+                  />
+                </div>
+
+                <p className="mt-3 text-[10px] text-slate-400">
+                  Estimated population · WorldPop{" "}
+                  {populationExposure.year}
+                </p>
+              </div>
+            )}
+
+            {populationExposure.status ===
+              "error" && (
+              <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50 p-3">
+                <p className="text-xs text-amber-700">
+                  Population data temporarily unavailable.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Site summary */}
+          <div className="mt-5 border-t border-slate-100 pt-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Site summary
+            </p>
+
+            <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                  Mapped hazard context
+                </p>
+
+                <p className="mt-1 text-xs leading-5 text-slate-700">
+                  {hazardSummary}
+                </p>
+              </div>
+
+              <div className="mt-3 border-t border-slate-200 pt-3">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                  Key concern
+                </p>
+
+                <p className="mt-1 text-xs font-medium leading-5 text-slate-800">
+                  {keyConcern}
+                </p>
+              </div>
             </div>
           </div>
 
@@ -888,6 +1146,39 @@ function formatCategory(
     default:
       return "No data";
   }
+}
+
+function formatHazardName(
+  type: "flood" | "tsunami" | "landslide"
+) {
+  switch (type) {
+    case "flood":
+      return "Flood";
+    case "tsunami":
+      return "Tsunami";
+    case "landslide":
+      return "Landslide";
+  }
+}
+
+function formatHazardList(
+  hazards: string[]
+) {
+  if (hazards.length === 0) {
+    return "";
+  }
+
+  if (hazards.length === 1) {
+    return hazards[0];
+  }
+
+  if (hazards.length === 2) {
+    return `${hazards[0]} and ${hazards[1]}`;
+  }
+
+  return `${hazards
+    .slice(0, -1)
+    .join(", ")}, and ${hazards.at(-1)}`;
 }
 
 function AreaMetric({

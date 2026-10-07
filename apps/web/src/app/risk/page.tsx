@@ -10,8 +10,8 @@ export default function RiskPage() {
               Risk Intelligence
             </h1>
 
-            <p className="mt-1 text-sm text-slate-500">
-              Understand long-term hazard and vulnerability at a location.
+            <p className="mt-1 text-sm leading-5 text-slate-500">
+              Understand multi-hazard conditions and population exposure around a selected site.
             </p>
           </div>
 
@@ -33,53 +33,60 @@ export default function RiskPage() {
 
           <section className="mt-8">
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Hazard layers
+              Hazard data
             </p>
 
             <div className="mt-3 space-y-3">
               <RiskLayer
                 label="Flood hazard"
-                description="BNPB / InaRISK"
-                checked
-              />
-
-              <RiskLayer
-                label="Landslide hazard"
-                description="Coming next"
+                description="BNPB InaRISK"
+                status="available"
               />
 
               <RiskLayer
                 label="Tsunami hazard"
-                description="Coming next"
+                description="BNPB InaRISK"
+                status="available"
+              />
+
+              <RiskLayer
+                label="Landslide hazard"
+                description="BNPB InaRISK"
+                status="available"
               />
 
               <RiskLayer
                 label="Earthquake hazard"
-                description="Coming next"
+                description="BNPB InaRISK"
+                status="limited"
               />
             </div>
           </section>
 
           <section className="mt-8">
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Site analysis
+              How to analyse
             </p>
 
-            <div className="mt-3 rounded-xl border border-dashed border-slate-300 p-4">
-              <p className="text-sm font-medium text-slate-700">
-                No site selected
+            <div className="mt-3 rounded-xl bg-slate-50 p-4">
+              <p className="text-sm font-medium text-slate-800">
+                Select a site on the map
               </p>
 
               <p className="mt-1 text-xs leading-5 text-slate-500">
-                Site selection and polygon analysis will be added after the
-                hazard layers are working.
+                Click a location, choose an analysis radius, then review center-point hazard values,
+                surrounding area statistics, and population exposure.
               </p>
             </div>
           </section>
 
-          <p className="mt-8 border-t border-slate-200 pt-4 text-[11px] text-slate-400">
-            Hazard data source: BNPB InaRISK
-          </p>
+          <div className="mt-8 border-t border-slate-200 pt-4">
+            <p className="text-[11px] leading-5 text-slate-400">
+              Hazard source: BNPB InaRISK
+              <br />
+              Population source: WorldPop
+            </p>
+          </div>
         </aside>
 
         <section className="min-w-0 flex-1">
@@ -90,17 +97,37 @@ export default function RiskPage() {
   );
 }
 
+type RiskLayerStatus =
+  | "available"
+  | "limited"
+  | "unavailable";
+
 function RiskLayer({
   label,
   description,
-  checked = false,
+  status,
 }: {
   label: string;
   description: string;
-  checked?: boolean;
+  status: RiskLayerStatus;
 }) {
+  const statusStyles = {
+    available:
+      "bg-emerald-50 text-emerald-700",
+    limited:
+      "bg-amber-50 text-amber-700",
+    unavailable:
+      "bg-slate-100 text-slate-500",
+  };
+
+  const statusLabels = {
+    available: "Available",
+    limited: "Limited",
+    unavailable: "Unavailable",
+  };
+
   return (
-    <label className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 p-3">
+    <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 p-3">
       <div>
         <p className="text-sm font-medium text-slate-800">
           {label}
@@ -111,12 +138,11 @@ function RiskLayer({
         </p>
       </div>
 
-      <input
-        type="checkbox"
-        defaultChecked={checked}
-        disabled={!checked}
-        className="mt-1 h-4 w-4"
-      />
-    </label>
+      <span
+        className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-medium ${statusStyles[status]}`}
+      >
+        {statusLabels[status]}
+      </span>
+    </div>
   );
 }
