@@ -1,7 +1,7 @@
 "use client";
 
 import type { SimulationBaseline } from "@/types/simulation";
-import { SimulationResult } from "@/lib/simulation";
+import { ScenarioInterpretation, SimulationResult, } from "@/lib/simulation";
 import { RetentionLevel } from "./ScenarioPanel";
 
 type ImpactPanelProps = {
@@ -14,6 +14,7 @@ type ImpactPanelProps = {
   permeableSurfacePercent: number;
   greenInfrastructurePercent: number;
   retentionLevel: RetentionLevel;
+  interpretation: ScenarioInterpretation;
 };
 
 export default function ImpactPanel({
@@ -26,6 +27,7 @@ export default function ImpactPanel({
   permeableSurfacePercent,
   greenInfrastructurePercent,
   retentionLevel,
+  interpretation,
 }: ImpactPanelProps) {
   const imperviousAreaHa =
     projectAreaHa * (imperviousPercent / 100);
@@ -330,6 +332,47 @@ export default function ImpactPanel({
             classified as other or pervious land.
           </p>
         )}
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+          Planning interpretation
+        </p>
+
+        <p className="mt-2 text-sm font-semibold leading-6 text-slate-900">
+          {interpretation.headline}
+        </p>
+
+        <p className="mt-2 text-xs leading-5 text-slate-600">
+          {interpretation.summary}
+        </p>
+
+        {interpretation.drivers.length > 0 && (
+          <div className="mt-4 space-y-2">
+            {interpretation.drivers.map(
+              (driver) => (
+                <div
+                  key={driver}
+                  className="flex gap-2 text-xs leading-5 text-slate-600"
+                >
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+
+                  <p>{driver}</p>
+                </div>
+              )
+            )}
+          </div>
+        )}
+
+        <div className="mt-4 border-t border-slate-200 pt-3">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+            Planning response
+          </p>
+
+          <p className="mt-1 text-xs leading-5 text-slate-700">
+            {interpretation.recommendation}
+          </p>
+        </div>
       </div>
 
       <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">

@@ -7,13 +7,18 @@ import ScenarioPanel, { ScenarioType } from "@/components/simulate/ScenarioPanel
 import SimulationMap, { SelectedSite } from "@/components/simulate/SimulationMap";
 import ImpactPanel from "@/components/simulate/ImpactPanel";
 import { SimulationBaseline } from "@/types/simulation";
-import { simulateDevelopment, SimulationResult } from "@/lib/simulation";
+import { simulateDevelopment, generateScenarioInterpretation } from "@/lib/simulation";
 
 type RetentionLevel =
   | "none"
   | "low"
   | "moderate"
   | "high";
+
+export type SimulationView =
+  | "current"
+  | "proposed"
+  | "mitigated";
 
 export default function SimulatePage() {
   const [selectedSite, setSelectedSite] =
@@ -52,6 +57,9 @@ export default function SimulatePage() {
     retentionLevel,
     setRetentionLevel,
   ] = useState<RetentionLevel>("none");
+
+  const [simulationView, setSimulationView] =
+  useState<SimulationView>("proposed");
 
   const analysisCircle = useMemo(() => {
     if (!selectedSite) return null;
@@ -119,6 +127,46 @@ export default function SimulatePage() {
     greenInfrastructurePercent,
     retentionFactor,
   ]);
+
+  const interpretation = useMemo(
+    () =>
+      generateScenarioInterpretation(
+        simulationResult,
+        {
+          baselinePopulation:
+            baseline.population,
+
+          floodHazardAverage:
+            baseline.floodAverage,
+
+          projectAreaHa,
+          imperviousPercent,
+          greenPercent,
+          additionalPopulation,
+
+          baselineImperviousPercent: 40,
+          baselineGreenPercent: 40,
+
+          mitigation: {
+            permeableSurfacePercent,
+            greenInfrastructurePercent,
+            retentionFactor,
+          },
+        }
+      ),
+    [
+      simulationResult,
+      baseline.population,
+      baseline.floodAverage,
+      projectAreaHa,
+      imperviousPercent,
+      greenPercent,
+      additionalPopulation,
+      permeableSurfacePercent,
+      greenInfrastructurePercent,
+      retentionFactor,
+    ]
+  );
 
     useEffect(() => {
       if (!analysisCircle) {
@@ -327,7 +375,27 @@ export default function SimulatePage() {
               projectAreaHa={projectAreaHa}
               imperviousPercent={imperviousPercent}
               greenPercent={greenPercent}
+              simulationView={simulationView}
             />
+            <div className="absolute left-1/2 top-5 z-10 -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-sm backdrop-blur">
+              <div className="flex gap-1">
+                {(["current", "proposed", "mitigated"] as const).map(
+                  (view) => (
+                    <button
+                      key={view}
+                      onClick={() => setSimulationView(view)}
+                      className={`rounded-lg px-3 py-2 text-xs font-medium capitalize transition ${
+                        simulationView === view
+                          ? "bg-slate-900 text-white"
+                          : "text-slate-500 hover:bg-slate-100"
+                      }`}
+                    >
+                      {view}
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
           </div>
 
           <ImpactPanel
@@ -345,6 +413,7 @@ export default function SimulatePage() {
               greenInfrastructurePercent
             }
             retentionLevel={retentionLevel}
+            interpretation={interpretation}
           />
         </div>
       </div>

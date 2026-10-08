@@ -61,6 +61,13 @@ export type MitigationInput = {
   retentionFactor: number;
 };
 
+export type ScenarioInterpretation = {
+  headline: string;
+  summary: string;
+  drivers: string[];
+  recommendation: string;
+};
+
 export function simulateDevelopment(
   input: SimulationInput
 ): SimulationResult {
@@ -235,7 +242,7 @@ export function simulateDevelopment(
 
     runoffDirection,
     impactLevel,
-    
+
     mitigatedRunoffPressure,
     mitigationReductionPercent,
   };
@@ -321,4 +328,119 @@ function clamp(
     Math.max(value, min),
     max
   );
+}
+
+export function generateScenarioInterpretation(
+  simulation: SimulationResult,
+  input: SimulationInput
+): ScenarioInterpretation {
+  const imperviousChange =
+    input.imperviousPercent -
+    input.baselineImperviousPercent;
+
+  const greenChange =
+    input.greenPercent -
+    input.baselineGreenPercent;
+
+  const floodHazard =
+    input.floodHazardAverage;
+
+  const drivers: string[] = [];
+
+  if (imperviousChange > 5) {
+    drivers.push(
+      `Impervious surface increases by ${imperviousChange.toFixed(
+        0
+      )} percentage points, reducing the area available for rainfall infiltration.`
+    );
+  }
+
+  if (greenChange < -5) {
+    drivers.push(
+      `Green and open space decreases by ${Math.abs(
+        greenChange
+      ).toFixed(
+        0
+      )} percentage points, reducing vegetation and permeable surface within the development footprint.`
+    );
+  }
+
+  if (input.additionalPopulation > 0) {
+    drivers.push(
+      `The proposal introduces approximately ${input.additionalPopulation.toLocaleString()} additional occupants within the surrounding hazard context.`
+    );
+  }
+
+  if (
+    floodHazard !== null &&
+    floodHazard >= 0.33
+  ) {
+    drivers.push(
+      "The selected area already contains mapped flood hazard, so additional runoff may place greater pressure on local drainage and flood-management capacity."
+    );
+  }
+
+  let headline: string;
+
+  if (simulation.runoffChangePercent >= 25) {
+    headline =
+      "Development substantially increases runoff pressure";
+  } else if (
+    simulation.runoffChangePercent >= 10
+  ) {
+    headline =
+      "Development moderately increases runoff pressure";
+  } else if (
+    simulation.runoffChangePercent > 5
+  ) {
+    headline =
+      "Development slightly increases runoff pressure";
+  } else if (
+    simulation.runoffChangePercent < -5
+  ) {
+    headline =
+      "Development reduces runoff pressure";
+  } else {
+    headline =
+      "Development has limited effect on runoff pressure";
+  }
+
+  const summary =
+    simulation.runoffDirection === "higher"
+      ? `The proposed scenario increases relative runoff pressure by ${simulation.runoffChangePercent.toFixed(
+          1
+        )}% compared with the baseline scenario. Increased impervious coverage means more rainfall is expected to become surface runoff rather than infiltrating into the ground.`
+      : simulation.runoffDirection === "lower"
+        ? `The proposed scenario reduces relative runoff pressure by ${Math.abs(
+            simulation.runoffChangePercent
+          ).toFixed(
+            1
+          )}% compared with the baseline scenario, mainly because the proposed land mix provides more permeable or vegetated surface.`
+        : "The proposed scenario produces little change in relative runoff pressure compared with the baseline scenario.";
+
+  let recommendation: string;
+
+  if (
+    simulation.mitigationReductionPercent >= 15
+  ) {
+    recommendation =
+      `The selected mitigation measures reduce scenario runoff pressure by ${simulation.mitigationReductionPercent.toFixed(
+        1
+      )}%. Maintaining these measures would improve the development's stormwater performance.`;
+  } else if (
+    simulation.runoffDirection === "higher"
+  ) {
+    recommendation =
+      "Consider increasing permeable surfaces, green infrastructure, or retention capacity to offset the increase in runoff pressure.";
+  } else {
+    recommendation =
+      "Maintain the current balance of permeable and green surfaces and review site-specific drainage requirements before implementation.";
+  }
+
+  return {
+    headline,
+    summary,
+    drivers,
+    recommendation,
+  };
 }

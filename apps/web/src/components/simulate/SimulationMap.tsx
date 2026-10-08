@@ -12,6 +12,7 @@ import { setWorkerUrl } from "maplibre-gl";
 import { circle } from "@turf/circle";
 
 import "maplibre-gl/dist/maplibre-gl.css";
+import { SimulationView } from "@/app/simulate/page";
 
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 
@@ -28,6 +29,8 @@ type SimulationMapProps = {
 
   imperviousPercent: number;
   greenPercent: number;
+
+  simulationView: SimulationView;
 };
 
 export default function SimulationMap({
@@ -36,6 +39,7 @@ export default function SimulationMap({
   projectAreaHa,
   imperviousPercent,
   greenPercent,
+  simulationView,
 }: SimulationMapProps) {
   /*
    * Convert hectares into the radius of an equivalent circle.
@@ -74,6 +78,16 @@ export default function SimulationMap({
 
   const analysisArea = useMemo(() => {
   if (!selectedSite) return null;
+
+  const displayedImpervious =
+    simulationView === "current"
+      ? 40
+      : imperviousPercent;
+
+  const displayedGreen =
+    simulationView === "current"
+      ? 40
+      : greenPercent;
 
   return circle(
     [
