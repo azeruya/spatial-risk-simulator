@@ -2,6 +2,7 @@
 
 import { useMemo, useEffect, useState } from "react";
 import { circle } from "@turf/circle";
+import { area } from "@turf/area";
 
 import ScenarioPanel, { ScenarioType } from "@/components/simulate/ScenarioPanel";
 import SimulationMap, { SelectedSite } from "@/components/simulate/SimulationMap";
@@ -44,13 +45,23 @@ export default function SimulatePage() {
 
   const [bearing, setBearing] = useState(0);
 
+  const [isDrawing, setIsDrawing] = useState(false);
+
+  const [drawnFootprint, setDrawnFootprint] =
+    useState<GeoJSON.Feature<GeoJSON.Polygon> | null>(null);
+
+  const drawnAreaM2 = useMemo(() => {
+    if (!drawnFootprint) return 0;
+
+    return area(drawnFootprint);
+  }, [drawnFootprint]);
+
   const projectAreaM2 =
     footprintMode === "dimensions"
       ? widthM * lengthM
-      : areaToM2(
-          areaValue,
-          areaUnit
-        );
+      : footprintMode === "draw"
+        ? drawnAreaM2
+        : areaToM2(areaValue, areaUnit);
 
   const projectAreaHa =
     projectAreaM2 / 10_000;
@@ -439,6 +450,24 @@ export default function SimulatePage() {
 
             bearing = {bearing}
             setBearing= {setBearing}
+            isDrawing={isDrawing}
+            hasDrawnFootprint={drawnFootprint !== null}
+            drawnAreaM2={drawnAreaM2}
+
+            onStartDrawing={() => {
+              setDrawnFootprint(null);
+              setFootprintMode("draw");
+              setIsDrawing(true);
+            }}
+
+            onCancelDrawing={() => {
+              setIsDrawing(false);
+            }}
+
+            onClearDrawing={() => {
+              setIsDrawing(false);
+              setDrawnFootprint(null);
+            }}
           />
 
           {/* Map */}
@@ -446,18 +475,22 @@ export default function SimulatePage() {
             <SimulationMap
               selectedSite={selectedSite}
               onSelectSite={setSelectedSite}
-
               projectAreaHa={projectAreaHa}
 
               footprintMode={footprintMode}
               widthM={widthM}
               lengthM={lengthM}
+              bearing={bearing}
+
+              drawnFootprint={drawnFootprint}
+              setDrawnFootprint={setDrawnFootprint}
+
+              isDrawing={isDrawing}
+              setIsDrawing={setIsDrawing}
 
               imperviousPercent={imperviousPercent}
               greenPercent={greenPercent}
-
               simulationView={simulationView}
-              bearing = {bearing}
             />
             <div className="absolute left-1/2 top-5 z-10 -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-sm backdrop-blur">
               <div className="flex gap-1">

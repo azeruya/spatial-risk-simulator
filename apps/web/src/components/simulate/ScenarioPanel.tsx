@@ -82,6 +82,14 @@ type ScenarioPanelProps = {
 
   bearing: number;
   setBearing: (value: number) => void;
+
+  isDrawing: boolean;
+  hasDrawnFootprint: boolean;
+  drawnAreaM2: number;
+
+  onStartDrawing: () => void;
+  onCancelDrawing: () => void;
+  onClearDrawing: () => void;
 };
 
 export default function ScenarioPanel({
@@ -125,6 +133,13 @@ export default function ScenarioPanel({
 
   bearing,
   setBearing,
+  isDrawing,
+  hasDrawnFootprint,
+  drawnAreaM2,
+
+  onStartDrawing,
+  onCancelDrawing,
+  onClearDrawing,
 }: ScenarioPanelProps) {
   console.log("bearing:", bearing);
   return (
@@ -418,29 +433,90 @@ export default function ScenarioPanel({
 
         {/* DRAW MODE */}
         {footprintMode === "draw" && (
-          <div className="mt-4 rounded-xl border border-dashed border-blue-200 bg-blue-50/50 p-4">
-            <p className="text-xs font-medium text-slate-700">
-              Draw project boundary
-            </p>
+          <div
+            className={`mt-4 rounded-xl border p-4 ${
+              isDrawing
+                ? "border-blue-300 bg-blue-50"
+                : "border-dashed border-blue-200 bg-blue-50/50"
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium text-slate-700">
+                  {isDrawing
+                    ? "Drawing project boundary"
+                    : hasDrawnFootprint
+                      ? "Project boundary defined"
+                      : "Draw project boundary"}
+                </p>
 
-            <p className="mt-1 text-[11px] leading-5 text-slate-500">
-              Draw the proposed
-              development footprint directly
-              on the map. The site area will
-              be calculated automatically.
-            </p>
+                <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                  {isDrawing
+                    ? "Click points on the map to trace the proposed development. Close the polygon to finish."
+                    : hasDrawnFootprint
+                      ? "The proposed footprint has been calculated from the boundary you drew."
+                      : "Draw the proposed development footprint directly on the map. Site area will be calculated automatically."}
+                </p>
+              </div>
 
-            <button
-              type="button"
-              className="mt-3 w-full rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
-            >
-              Start drawing
-            </button>
+              {isDrawing && (
+                <span className="shrink-0 rounded-full bg-blue-100 px-2 py-1 text-[10px] font-medium text-blue-700">
+                  Drawing
+                </span>
+              )}
+            </div>
 
-            <p className="mt-2 text-[10px] text-slate-400">
-              Drawing interaction will be
-              connected next.
-            </p>
+            {hasDrawnFootprint && !isDrawing && (
+              <div className="mt-3 rounded-lg border border-blue-100 bg-white p-3">
+                <p className="text-[10px] uppercase tracking-wide text-slate-400">
+                  Calculated footprint
+                </p>
+
+                <div className="mt-1 flex items-baseline justify-between">
+                  <p className="text-sm font-semibold text-slate-900">
+                    {Math.round(drawnAreaM2).toLocaleString()} m²
+                  </p>
+
+                  <p className="text-xs text-slate-500">
+                    {(drawnAreaM2 / 10_000).toFixed(2)} ha
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-3 flex gap-2">
+              {isDrawing ? (
+                <button
+                  type="button"
+                  onClick={onCancelDrawing}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel drawing
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={onStartDrawing}
+                    className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
+                  >
+                    {hasDrawnFootprint
+                      ? "Redraw boundary"
+                      : "Start drawing"}
+                  </button>
+
+                  {hasDrawnFootprint && (
+                    <button
+                      type="button"
+                      onClick={onClearDrawing}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>

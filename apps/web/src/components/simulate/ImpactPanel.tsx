@@ -158,7 +158,7 @@ export default function ImpactPanel({
         <div className="mt-2 grid grid-cols-2 gap-2">
           <MetricCard
             label="Project area"
-            value={`${projectAreaHa.toFixed(1)} ha`}
+            value={formatProjectArea(projectAreaHa)}
           />
 
           <MetricCard
@@ -618,4 +618,14 @@ function ImpactBadge({
         level.slice(1)}
     </span>
   );
+}
+
+function formatProjectArea(areaHa: number) {
+  const areaM2 = areaHa * 10_000;
+
+  if (areaM2 < 10_000) {
+    return `${Math.round(areaM2).toLocaleString()} m²`;
+  }
+
+  return `${areaHa.toFixed(2)} ha`;
 }

@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useEffect, useRef } from "react";
 
-import Map, { Layer, Marker, Source, } from "react-map-gl/maplibre";
+import Map, { Layer, Marker, Source, MapRef} from "react-map-gl/maplibre";
 import { setWorkerUrl } from "maplibre-gl";
 import { circle } from "@turf/circle";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -10,6 +10,10 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { SimulationView } from "@/app/simulate/page";
 import { FootprintMode } from "@/types/simulation";
 import { createRectangleFootprint } from "@/lib/geometry";
+
+import { TerraDraw, TerraDrawPolygonMode } from "terra-draw";
+import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
+
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 
 export type SelectedSite = {
@@ -32,6 +36,16 @@ type SimulationMapProps = {
   greenPercent: number;
 
   simulationView: SimulationView;
+  drawnFootprint:
+    GeoJSON.Feature<GeoJSON.Polygon> | null;
+
+  setDrawnFootprint: (
+    footprint:
+      GeoJSON.Feature<GeoJSON.Polygon> | null
+  ) => void;
+
+  isDrawing: boolean;
+  setIsDrawing: (value: boolean) => void;
 };
 
 function formatArea(projectAreaHa: number) {
@@ -48,19 +62,22 @@ export default function SimulationMap({
   selectedSite,
   onSelectSite,
   projectAreaHa,
+
   footprintMode,
   widthM,
   lengthM,
   bearing,
+
+  drawnFootprint,
+  setDrawnFootprint,
+
+  isDrawing,
+  setIsDrawing,
+
   imperviousPercent,
   greenPercent,
   simulationView,
 }: SimulationMapProps) {
-  console.log("SIM MAP:", {
-  footprintMode,
-  widthM,
-  lengthM,
-});
   /*
    * Convert hectares into the radius of an equivalent circle.
    *
@@ -94,6 +111,10 @@ export default function SimulationMap({
   }, [selectedSite]);
 
   const projectFootprint = useMemo(() => {
+    if (footprintMode === "draw") {
+      return drawnFootprint;
+    }
+
     if (!selectedSite) {
       return null;
     }
@@ -104,7 +125,7 @@ export default function SimulationMap({
         selectedSite.latitude,
         widthM,
         lengthM,
-        bearing,
+        bearing
       );
     }
 
@@ -124,17 +145,20 @@ export default function SimulationMap({
       }
     );
   }, [
-    selectedSite,
     footprintMode,
+    drawnFootprint,
+    selectedSite,
     widthM,
     lengthM,
     bearing,
     projectAreaHa,
   ]);
-    console.log(
-    "PROJECT FOOTPRINT:",
-    projectFootprint?.geometry
-  );
+    console.log("DRAW STATE:", isDrawing);;
+
+  const mapRef = useRef<MapRef | null>(null);
+
+  const drawRef =
+    useRef<TerraDraw | null>(null);
 
   function handleMapClick(event: {
     lngLat: {
@@ -142,15 +166,83 @@ export default function SimulationMap({
       lat: number;
     };
   }) {
+    if (footprintMode === "draw") {
+      return;
+    }
+
     onSelectSite({
       longitude: event.lngLat.lng,
       latitude: event.lngLat.lat,
     });
   }
 
+  useEffect(() => {
+    if (!isDrawing) return;
+
+    const map = mapRef.current?.getMap();
+
+    if (!map) return;
+
+    // Prevent duplicate draw instances
+    if (drawRef.current) {
+      drawRef.current.stop();
+      drawRef.current = null;
+    }
+
+    const draw = new TerraDraw({
+      adapter: new TerraDrawMapLibreGLAdapter({
+        map,
+      }),
+
+      modes: [
+        new TerraDrawPolygonMode(),
+      ],
+    });
+
+    draw.start();
+    draw.setMode("polygon");
+
+    drawRef.current = draw;
+
+    const handleFinish = () => {
+      const features = draw.getSnapshot();
+
+      const polygon =
+        features.find(
+          (feature) =>
+            feature.geometry.type === "Polygon"
+        );
+
+      if (!polygon) return;
+
+      setDrawnFootprint(
+        polygon as GeoJSON.Feature<GeoJSON.Polygon>
+      );
+
+      setIsDrawing(false);
+
+      draw.setMode("static");
+    };
+
+    draw.on("finish", handleFinish);
+
+    return () => {
+      draw.stop();
+
+      if (drawRef.current === draw) {
+        drawRef.current = null;
+      }
+    };
+  }, [
+    isDrawing,
+    setDrawnFootprint,
+    setIsDrawing,
+  ]);
+
   return (
     <div className="relative h-full w-full">
       <Map
+        ref = { mapRef}
         initialViewState={{
           longitude: 100.3543,
           latitude: -0.9471,
@@ -218,7 +310,7 @@ export default function SimulationMap({
         )}
 
         {/* Center point */}
-        {selectedSite && (
+        {selectedSite && footprintMode !== "draw" && (
           <Marker
             longitude={selectedSite.longitude}
             latitude={selectedSite.latitude}
@@ -247,11 +339,15 @@ export default function SimulationMap({
             <p className="mt-1 text-xl font-semibold text-slate-900">
               {formatArea(projectAreaHa)}
             </p>
-
-            <p className="text-xs text-slate-500">
-              ha
-            </p>
           </div>
+
+          <p className="mt-1 text-[11px] text-slate-400">
+              {footprintMode === "draw"
+                ? `${projectAreaHa.toFixed(2)} ha · drawn boundary`
+                : footprintMode === "dimensions"
+                  ? `${widthM} m × ${lengthM} m`
+                  : `≈ ${Math.round(footprintRadiusMeters)} m equivalent radius`}
+          </p>
 
           <p className="mt-1 text-[11px] text-slate-400">
             {footprintMode === "dimensions"
