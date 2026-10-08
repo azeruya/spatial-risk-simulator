@@ -6,7 +6,7 @@ import { circle } from "@turf/circle";
 import ScenarioPanel, { ScenarioType } from "@/components/simulate/ScenarioPanel";
 import SimulationMap, { SelectedSite } from "@/components/simulate/SimulationMap";
 import ImpactPanel from "@/components/simulate/ImpactPanel";
-import { SimulationBaseline } from "@/types/simulation";
+import { SimulationBaseline, FootprintMode, AreaUnit, areaToM2 } from "@/types/simulation";
 import { simulateDevelopment, generateScenarioInterpretation } from "@/lib/simulation";
 
 type RetentionLevel =
@@ -27,8 +27,33 @@ export default function SimulatePage() {
   const [scenarioType, setScenarioType] =
     useState<ScenarioType>("expansion");
 
-  const [projectAreaHa, setProjectAreaHa] =
+  const [footprintMode, setFootprintMode] =
+    useState<FootprintMode>("area");
+
+  const [areaValue, setAreaValue] =
     useState(2);
+
+  const [areaUnit, setAreaUnit] =
+    useState<AreaUnit>("ha");
+
+  const [widthM, setWidthM] =
+    useState(100);
+
+  const [lengthM, setLengthM] =
+    useState(200);
+
+  const [bearing, setBearing] = useState(0);
+
+  const projectAreaM2 =
+    footprintMode === "dimensions"
+      ? widthM * lengthM
+      : areaToM2(
+          areaValue,
+          areaUnit
+        );
+
+  const projectAreaHa =
+    projectAreaM2 / 10_000;
 
   const [
     imperviousPercent,
@@ -304,6 +329,12 @@ export default function SimulatePage() {
       };
     }, [analysisCircle]);
 
+    console.log("PAGE STATE:", {
+      footprintMode,
+      widthM,
+      lengthM,
+    });
+
   return (
     <main className="h-[calc(100vh-73px)] bg-slate-50">
       <div className="flex h-full flex-col">
@@ -337,21 +368,57 @@ export default function SimulatePage() {
         <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_320px]">
           <ScenarioPanel
             scenarioType={scenarioType}
-            setScenarioType={setScenarioType}
+            setScenarioType={
+              setScenarioType
+            }
 
-            projectAreaHa={projectAreaHa}
-            setProjectAreaHa={setProjectAreaHa}
+            projectAreaHa={
+              projectAreaHa
+            }
 
-            imperviousPercent={imperviousPercent}
-            setImperviousPercent={setImperviousPercent}
+            footprintMode={
+              footprintMode
+            }
+            setFootprintMode={
+              setFootprintMode
+            }
 
-            greenPercent={greenPercent}
-            setGreenPercent={setGreenPercent}
+            areaValue={areaValue}
+            setAreaValue={setAreaValue}
 
-            additionalPopulation={additionalPopulation}
-            setAdditionalPopulation={setAdditionalPopulation}
+            areaUnit={areaUnit}
+            setAreaUnit={setAreaUnit}
 
-            permeableSurfacePercent={permeableSurfacePercent}
+            widthM={widthM}
+            setWidthM={setWidthM}
+
+            lengthM={lengthM}
+            setLengthM={setLengthM}
+
+            imperviousPercent={
+              imperviousPercent
+            }
+            setImperviousPercent={
+              setImperviousPercent
+            }
+
+            greenPercent={
+              greenPercent
+            }
+            setGreenPercent={
+              setGreenPercent
+            }
+
+            additionalPopulation={
+              additionalPopulation
+            }
+            setAdditionalPopulation={
+              setAdditionalPopulation
+            }
+
+            permeableSurfacePercent={
+              permeableSurfacePercent
+            }
             setPermeableSurfacePercent={
               setPermeableSurfacePercent
             }
@@ -363,8 +430,15 @@ export default function SimulatePage() {
               setGreenInfrastructurePercent
             }
 
-            retentionLevel={retentionLevel}
-            setRetentionLevel={setRetentionLevel}
+            retentionLevel={
+              retentionLevel
+            }
+            setRetentionLevel={
+              setRetentionLevel
+            }
+
+            bearing = {bearing}
+            setBearing= {setBearing}
           />
 
           {/* Map */}
@@ -372,10 +446,18 @@ export default function SimulatePage() {
             <SimulationMap
               selectedSite={selectedSite}
               onSelectSite={setSelectedSite}
+
               projectAreaHa={projectAreaHa}
+
+              footprintMode={footprintMode}
+              widthM={widthM}
+              lengthM={lengthM}
+
               imperviousPercent={imperviousPercent}
               greenPercent={greenPercent}
+
               simulationView={simulationView}
+              bearing = {bearing}
             />
             <div className="absolute left-1/2 top-5 z-10 -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-sm backdrop-blur">
               <div className="flex gap-1">

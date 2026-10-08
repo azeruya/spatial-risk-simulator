@@ -2,18 +2,14 @@
 
 import { useMemo } from "react";
 
-import Map, {
-  Layer,
-  Marker,
-  Source,
-} from "react-map-gl/maplibre";
-
+import Map, { Layer, Marker, Source, } from "react-map-gl/maplibre";
 import { setWorkerUrl } from "maplibre-gl";
 import { circle } from "@turf/circle";
-
 import "maplibre-gl/dist/maplibre-gl.css";
-import { SimulationView } from "@/app/simulate/page";
 
+import { SimulationView } from "@/app/simulate/page";
+import { FootprintMode } from "@/types/simulation";
+import { createRectangleFootprint } from "@/lib/geometry";
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 
 export type SelectedSite = {
@@ -27,20 +23,44 @@ type SimulationMapProps = {
 
   projectAreaHa: number;
 
+  footprintMode: FootprintMode;
+  widthM: number;
+  lengthM: number;
+  bearing: number;
+
   imperviousPercent: number;
   greenPercent: number;
 
   simulationView: SimulationView;
 };
 
+function formatArea(projectAreaHa: number) {
+  const areaM2 = projectAreaHa * 10_000;
+
+  if (areaM2 < 10_000) {
+    return `${Math.round(areaM2).toLocaleString()} m²`;
+  }
+
+  return `${projectAreaHa.toFixed(2)} ha`;
+}
+
 export default function SimulationMap({
   selectedSite,
   onSelectSite,
   projectAreaHa,
+  footprintMode,
+  widthM,
+  lengthM,
+  bearing,
   imperviousPercent,
   greenPercent,
   simulationView,
 }: SimulationMapProps) {
+  console.log("SIM MAP:", {
+  footprintMode,
+  widthM,
+  lengthM,
+});
   /*
    * Convert hectares into the radius of an equivalent circle.
    *
@@ -55,39 +75,10 @@ export default function SimulationMap({
     return Math.sqrt(areaM2 / Math.PI);
   }, [projectAreaHa]);
 
-  const projectFootprint = useMemo(() => {
-    if (!selectedSite) return null;
-
-    return circle(
-      [
-        selectedSite.longitude,
-        selectedSite.latitude,
-      ],
-      footprintRadiusMeters / 1000,
-      {
-        steps: 64,
-        units: "kilometers",
-      }
-    );
-  }, [
-    selectedSite,
-    footprintRadiusMeters,
-  ]);
-
   const analysisRadiusMeters = 500;
 
   const analysisArea = useMemo(() => {
   if (!selectedSite) return null;
-
-  const displayedImpervious =
-    simulationView === "current"
-      ? 40
-      : imperviousPercent;
-
-  const displayedGreen =
-    simulationView === "current"
-      ? 40
-      : greenPercent;
 
   return circle(
     [
@@ -101,6 +92,49 @@ export default function SimulationMap({
     }
   );
   }, [selectedSite]);
+
+  const projectFootprint = useMemo(() => {
+    if (!selectedSite) {
+      return null;
+    }
+
+    if (footprintMode === "dimensions") {
+      return createRectangleFootprint(
+        selectedSite.longitude,
+        selectedSite.latitude,
+        widthM,
+        lengthM,
+        bearing,
+      );
+    }
+
+    const radiusMeters = Math.sqrt(
+      (projectAreaHa * 10_000) / Math.PI
+    );
+
+    return circle(
+      [
+        selectedSite.longitude,
+        selectedSite.latitude,
+      ],
+      radiusMeters / 1000,
+      {
+        steps: 64,
+        units: "kilometers",
+      }
+    );
+  }, [
+    selectedSite,
+    footprintMode,
+    widthM,
+    lengthM,
+    bearing,
+    projectAreaHa,
+  ]);
+    console.log(
+    "PROJECT FOOTPRINT:",
+    projectFootprint?.geometry
+  );
 
   function handleMapClick(event: {
     lngLat: {
@@ -210,8 +244,8 @@ export default function SimulationMap({
           </p>
 
           <div className="mt-1 flex items-baseline gap-1">
-            <p className="text-xl font-semibold text-slate-900">
-              {projectAreaHa.toFixed(1)}
+            <p className="mt-1 text-xl font-semibold text-slate-900">
+              {formatArea(projectAreaHa)}
             </p>
 
             <p className="text-xs text-slate-500">
@@ -220,7 +254,9 @@ export default function SimulationMap({
           </div>
 
           <p className="mt-1 text-[11px] text-slate-400">
-            ≈ {Math.round(footprintRadiusMeters)} m radius
+            {footprintMode === "dimensions"
+              ? `${widthM} m × ${lengthM} m`
+              : `≈ ${Math.round(footprintRadiusMeters)} m equivalent radius`}
           </p>
         </div>
       )}
@@ -255,6 +291,7 @@ export default function SimulationMap({
           </div>
         </div>
       )}
+      
     </div>
   );
 }
