@@ -9,6 +9,7 @@ import SimulationMap, { SelectedSite } from "@/components/simulate/SimulationMap
 import ImpactPanel from "@/components/simulate/ImpactPanel";
 import { SimulationBaseline, FootprintMode, AreaUnit, areaToM2 } from "@/types/simulation";
 import { simulateDevelopment, generateScenarioInterpretation } from "@/lib/simulation";
+import { createRectangleFootprint } from "@/lib/geometry";
 
 type RetentionLevel =
   | "none"
@@ -20,6 +21,72 @@ export type SimulationView =
   | "current"
   | "proposed"
   | "mitigated";
+
+type FootprintHazardAnalysis = {
+ //status:
+   // | "success"
+   // | "no-data"
+   // | "unavailable";
+
+  average: number | null;
+  maximum: number | null;
+
+  validSamples: number;
+  totalSamples: number;
+  coveragePercent: number;
+};
+
+async function fetchFootprintHazard(
+  endpoint: string,
+  polygon: GeoJSON.Feature<GeoJSON.Polygon>
+): Promise<FootprintHazardAnalysis | null> {
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      polygon,
+      sampleCount: 25,
+    }),
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = await response.json();
+
+  const validSamples =
+    typeof data.validSamples === "number"
+      ? data.validSamples
+      : 0;
+
+  const totalSamples =
+    typeof data.totalSamples === "number"
+      ? data.totalSamples
+      : 0;
+
+  return {
+    average:
+      typeof data.average === "number"
+        ? data.average
+        : null,
+
+    maximum:
+      typeof data.maximum === "number"
+        ? data.maximum
+        : null,
+
+    validSamples,
+    totalSamples,
+
+    coveragePercent:
+      totalSamples > 0
+        ? (validSamples / totalSamples) * 100
+        : 0,
+  };
+}
 
 export default function SimulatePage() {
   const [selectedSite, setSelectedSite] =
@@ -49,6 +116,24 @@ export default function SimulatePage() {
 
   const [drawnFootprint, setDrawnFootprint] =
     useState<GeoJSON.Feature<GeoJSON.Polygon> | null>(null);
+
+  type FootprintHazards = {
+    flood: FootprintHazardAnalysis | null;
+    tsunami: FootprintHazardAnalysis | null;
+    landslide: FootprintHazardAnalysis | null;
+  };
+
+  const [footprintHazards, setFootprintHazards] =
+    useState<FootprintHazards>({
+      flood: null,
+      tsunami: null,
+      landslide: null,
+    });
+
+  const [
+    footprintHazardsLoading,
+    setFootprintHazardsLoading,
+  ] = useState(false);
 
   const drawnAreaM2 = useMemo(() => {
     if (!drawnFootprint) return 0;
@@ -129,6 +214,50 @@ export default function SimulatePage() {
     moderate: 0.2,
     high: 0.3,
   }[retentionLevel];
+
+  const projectFootprint = useMemo(() => {
+    if (footprintMode === "draw") {
+      return drawnFootprint;
+    }
+
+    if (!selectedSite) {
+      return null;
+    }
+
+    if (footprintMode === "dimensions") {
+      return createRectangleFootprint(
+        selectedSite.longitude,
+        selectedSite.latitude,
+        widthM,
+        lengthM,
+        bearing
+      );
+    }
+
+    const radiusMeters = Math.sqrt(
+      (projectAreaHa * 10_000) / Math.PI
+    );
+
+    return circle(
+      [
+        selectedSite.longitude,
+        selectedSite.latitude,
+      ],
+      radiusMeters / 1000,
+      {
+        steps: 64,
+        units: "kilometers",
+      }
+    );
+  }, [
+    footprintMode,
+    drawnFootprint,
+    selectedSite,
+    widthM,
+    lengthM,
+    bearing,
+    projectAreaHa,
+  ]);
 
   const simulationResult = useMemo(() => {
     return simulateDevelopment({
@@ -340,6 +469,77 @@ export default function SimulatePage() {
       };
     }, [analysisCircle]);
 
+    useEffect(() => {
+      if (!projectFootprint) {
+        setFootprintHazards({
+          flood: null,
+          tsunami: null,
+          landslide: null,
+        });
+
+        return;
+      }
+
+      const footprint = projectFootprint;
+
+      let cancelled = false;
+
+      async function analyseFootprint() {
+        setFootprintHazardsLoading(true);
+
+        try {
+          const [flood, tsunami, landslide] =
+            await Promise.all([
+              fetchFootprintHazard(
+                "/api/bnpb/flood-hazard/footprint",
+                footprint
+              ),
+
+              fetchFootprintHazard(
+                "/api/bnpb/tsunami-hazard/footprint",
+                footprint
+              ),
+
+              fetchFootprintHazard(
+                "/api/bnpb/landslide-hazard/footprint",
+                footprint
+              ),
+            ]);
+
+          if (cancelled) return;
+
+          setFootprintHazards({
+            flood,
+            tsunami,
+            landslide,
+          });
+        } catch (error) {
+          console.error(
+            "Footprint hazard analysis failed",
+            error
+          );
+
+          if (!cancelled) {
+            setFootprintHazards({
+              flood: null,
+              tsunami: null,
+              landslide: null,
+            });
+          }
+        } finally {
+          if (!cancelled) {
+            setFootprintHazardsLoading(false);
+          }
+        }
+      }
+
+      analyseFootprint();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [projectFootprint]);
+
     console.log("PAGE STATE:", {
       footprintMode,
       widthM,
@@ -475,14 +675,17 @@ export default function SimulatePage() {
             <SimulationMap
               selectedSite={selectedSite}
               onSelectSite={setSelectedSite}
+
               projectAreaHa={projectAreaHa}
 
               footprintMode={footprintMode}
+
               widthM={widthM}
               lengthM={lengthM}
               bearing={bearing}
 
-              drawnFootprint={drawnFootprint}
+              projectFootprint={projectFootprint}
+
               setDrawnFootprint={setDrawnFootprint}
 
               isDrawing={isDrawing}
@@ -490,6 +693,7 @@ export default function SimulatePage() {
 
               imperviousPercent={imperviousPercent}
               greenPercent={greenPercent}
+
               simulationView={simulationView}
             />
             <div className="absolute left-1/2 top-5 z-10 -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-sm backdrop-blur">
@@ -529,6 +733,8 @@ export default function SimulatePage() {
             }
             retentionLevel={retentionLevel}
             interpretation={interpretation}
+            footprintHazards={footprintHazards}
+            footprintHazardsLoading={footprintHazardsLoading}
           />
         </div>
       </div>

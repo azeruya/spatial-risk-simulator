@@ -4,17 +4,37 @@ import type { SimulationBaseline } from "@/types/simulation";
 import { ScenarioInterpretation, SimulationResult, } from "@/lib/simulation";
 import { RetentionLevel } from "./ScenarioPanel";
 
+type FootprintHazards = {
+  flood: FootprintHazardAnalysis | null;
+  tsunami: FootprintHazardAnalysis | null;
+  landslide: FootprintHazardAnalysis | null;
+};
+
 type ImpactPanelProps = {
   projectAreaHa: number;
   imperviousPercent: number;
   greenPercent: number;
   additionalPopulation: number;
+
   baseline: SimulationBaseline;
   simulation: SimulationResult;
+
   permeableSurfacePercent: number;
   greenInfrastructurePercent: number;
   retentionLevel: RetentionLevel;
+
   interpretation: ScenarioInterpretation;
+
+  footprintHazards: FootprintHazards;
+  footprintHazardsLoading: boolean;
+};
+
+type FootprintHazardAnalysis = {
+  average: number | null;
+  maximum: number | null;
+  validSamples: number;
+  totalSamples: number;
+  coveragePercent: number;
 };
 
 export default function ImpactPanel({
@@ -22,12 +42,18 @@ export default function ImpactPanel({
   imperviousPercent,
   greenPercent,
   additionalPopulation,
+
   baseline,
   simulation,
+
   permeableSurfacePercent,
   greenInfrastructurePercent,
   retentionLevel,
+
   interpretation,
+
+  footprintHazards,
+  footprintHazardsLoading,
 }: ImpactPanelProps) {
   const imperviousAreaHa =
     projectAreaHa * (imperviousPercent / 100);
@@ -168,12 +194,12 @@ export default function ImpactPanel({
 
           <MetricCard
             label="Impervious"
-            value={`${imperviousAreaHa.toFixed(2)} ha`}
+            value={formatProjectArea(imperviousAreaHa)}
           />
 
           <MetricCard
             label="Green space"
-            value={`${greenAreaHa.toFixed(2)} ha`}
+            value={formatProjectArea(greenAreaHa)}
           />
         </div>
       </div>
@@ -233,6 +259,91 @@ export default function ImpactPanel({
               )}%`}
             />
           </div>
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+          Site hazard overlap
+        </p>
+
+        <div className="mt-3 space-y-2">
+          {(["flood", "tsunami", "landslide"] as const).map(
+            (hazardKey) => {
+              const hazard = footprintHazards[hazardKey];
+
+              const label = {
+                flood: "Flood",
+                tsunami: "Tsunami",
+                landslide: "Landslide",
+              }[hazardKey];
+
+              return (
+                <div
+                  key={hazardKey}
+                  className="rounded-xl border border-slate-200 p-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-slate-800">
+                      {label} hazard
+                    </p>
+
+                    {footprintHazardsLoading && (
+                      <span className="text-[10px] text-slate-400">
+                        Analysing…
+                      </span>
+                    )}
+                  </div>
+
+                  {!footprintHazardsLoading && hazard ? (
+                    <>
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        <div>
+                          <p className="text-[10px] uppercase text-slate-400">
+                            Coverage
+                          </p>
+                          <p className="mt-1 text-sm font-semibold">
+                            {hazard.coveragePercent.toFixed(0)}%
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] uppercase text-slate-400">
+                            Average
+                          </p>
+                          <p className="mt-1 text-sm font-semibold">
+                            {hazard.average !== null
+                              ? hazard.average.toFixed(3)
+                              : "—"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] uppercase text-slate-400">
+                            Maximum
+                          </p>
+                          <p className="mt-1 text-sm font-semibold">
+                            {hazard.maximum !== null
+                              ? hazard.maximum.toFixed(3)
+                              : "—"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <p className="mt-2 text-[10px] leading-4 text-slate-400">
+                        {hazard.validSamples} of {hazard.totalSamples} samples
+                        returned mapped data.
+                      </p>
+                    </>
+                  ) : !footprintHazardsLoading ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      No mapped data returned for this footprint.
+                    </p>
+                  ) : null}
+                </div>
+              );
+            }
+          )}
         </div>
       </div>
 
@@ -304,15 +415,15 @@ export default function ImpactPanel({
         <p className="mt-2 text-sm leading-6 text-slate-700">
           This proposal develops{" "}
           <span className="font-semibold text-slate-900">
-            {projectAreaHa.toFixed(1)} ha
+            {formatProjectArea(projectAreaHa)}
           </span>
           , including{" "}
           <span className="font-semibold text-slate-900">
-            {imperviousAreaHa.toFixed(2)} ha
+            {formatProjectArea(imperviousAreaHa)}
           </span>{" "}
           of impervious surface and{" "}
           <span className="font-semibold text-slate-900">
-            {greenAreaHa.toFixed(2)} ha
+            {formatProjectArea(greenAreaHa)}
           </span>{" "}
           of green or open space.
         </p>
@@ -328,7 +439,7 @@ export default function ImpactPanel({
         {remainingAreaHa > 0 && (
           <p className="mt-2 text-xs leading-5 text-slate-500">
             Approximately{" "}
-            {remainingAreaHa.toFixed(2)} ha remains
+            {formatProjectArea(remainingAreaHa)} remains
             classified as other or pervious land.
           </p>
         )}

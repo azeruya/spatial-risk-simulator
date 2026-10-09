@@ -28,24 +28,28 @@ type SimulationMapProps = {
   projectAreaHa: number;
 
   footprintMode: FootprintMode;
+
+  // Only for displaying footprint information
   widthM: number;
   lengthM: number;
   bearing: number;
+
+  // Final geometry calculated by page.tsx
+  projectFootprint:
+    GeoJSON.Feature<GeoJSON.Polygon> | null;
+
+  // Needed because Terra Draw lives in SimulationMap
+  setDrawnFootprint: (
+    footprint: GeoJSON.Feature<GeoJSON.Polygon> | null
+  ) => void;
+
+  isDrawing: boolean;
+  setIsDrawing: (value: boolean) => void;
 
   imperviousPercent: number;
   greenPercent: number;
 
   simulationView: SimulationView;
-  drawnFootprint:
-    GeoJSON.Feature<GeoJSON.Polygon> | null;
-
-  setDrawnFootprint: (
-    footprint:
-      GeoJSON.Feature<GeoJSON.Polygon> | null
-  ) => void;
-
-  isDrawing: boolean;
-  setIsDrawing: (value: boolean) => void;
 };
 
 function formatArea(projectAreaHa: number) {
@@ -61,6 +65,7 @@ function formatArea(projectAreaHa: number) {
 export default function SimulationMap({
   selectedSite,
   onSelectSite,
+
   projectAreaHa,
 
   footprintMode,
@@ -68,7 +73,7 @@ export default function SimulationMap({
   lengthM,
   bearing,
 
-  drawnFootprint,
+  projectFootprint,
   setDrawnFootprint,
 
   isDrawing,
@@ -76,6 +81,7 @@ export default function SimulationMap({
 
   imperviousPercent,
   greenPercent,
+
   simulationView,
 }: SimulationMapProps) {
   /*
@@ -109,51 +115,6 @@ export default function SimulationMap({
     }
   );
   }, [selectedSite]);
-
-  const projectFootprint = useMemo(() => {
-    if (footprintMode === "draw") {
-      return drawnFootprint;
-    }
-
-    if (!selectedSite) {
-      return null;
-    }
-
-    if (footprintMode === "dimensions") {
-      return createRectangleFootprint(
-        selectedSite.longitude,
-        selectedSite.latitude,
-        widthM,
-        lengthM,
-        bearing
-      );
-    }
-
-    const radiusMeters = Math.sqrt(
-      (projectAreaHa * 10_000) / Math.PI
-    );
-
-    return circle(
-      [
-        selectedSite.longitude,
-        selectedSite.latitude,
-      ],
-      radiusMeters / 1000,
-      {
-        steps: 64,
-        units: "kilometers",
-      }
-    );
-  }, [
-    footprintMode,
-    drawnFootprint,
-    selectedSite,
-    widthM,
-    lengthM,
-    bearing,
-    projectAreaHa,
-  ]);
-    console.log("DRAW STATE:", isDrawing);;
 
   const mapRef = useRef<MapRef | null>(null);
 

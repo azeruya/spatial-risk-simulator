@@ -13,6 +13,8 @@
   "dependencies": {
     "@tanstack/react-query": "^5.104.1",
     "@turf/area": "^7.4.0",
+    "@turf/bbox": "^7.4.0",
+    "@turf/boolean-point-in-polygon": "^7.4.0",
     "@turf/circle": "^7.4.0",
     "@turf/helpers": "^7.4.0",
     "@turf/transform-rotate": "^7.4.0",
