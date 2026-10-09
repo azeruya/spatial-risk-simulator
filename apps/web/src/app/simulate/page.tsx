@@ -7,9 +7,16 @@ import { area } from "@turf/area";
 import ScenarioPanel, { ScenarioType } from "@/components/simulate/ScenarioPanel";
 import SimulationMap, { SelectedSite } from "@/components/simulate/SimulationMap";
 import ImpactPanel from "@/components/simulate/ImpactPanel";
-import { SimulationBaseline, FootprintMode, AreaUnit, areaToM2 } from "@/types/simulation";
-import { simulateDevelopment, generateScenarioInterpretation } from "@/lib/simulation";
+import type { AreaUnit, FootprintHazardAnalysis, FootprintHazards, FootprintMode, SimulationBaseline } from "@/types/simulation";
+import { areaToM2 } from "@/types/simulation";
+import { simulateDevelopment } from "@/lib/simulation";
 import { createRectangleFootprint } from "@/lib/geometry";
+import { buildPlanningAssessment } from "@/lib/planning-assessment";
+
+const BASELINE_LAND_COVER = {
+  imperviousPercent: 40,
+  greenPercent: 40,
+} as const;
 
 type RetentionLevel =
   | "none"
@@ -21,20 +28,6 @@ export type SimulationView =
   | "current"
   | "proposed"
   | "mitigated";
-
-type FootprintHazardAnalysis = {
- //status:
-   // | "success"
-   // | "no-data"
-   // | "unavailable";
-
-  average: number | null;
-  maximum: number | null;
-
-  validSamples: number;
-  totalSamples: number;
-  coveragePercent: number;
-};
 
 async function fetchFootprintHazard(
   endpoint: string,
@@ -99,16 +92,16 @@ export default function SimulatePage() {
     useState<FootprintMode>("area");
 
   const [areaValue, setAreaValue] =
-    useState(2);
+    useState(0);
 
   const [areaUnit, setAreaUnit] =
     useState<AreaUnit>("ha");
 
   const [widthM, setWidthM] =
-    useState(100);
+    useState(0);
 
   const [lengthM, setLengthM] =
-    useState(200);
+    useState(0);
 
   const [bearing, setBearing] = useState(0);
 
@@ -116,12 +109,6 @@ export default function SimulatePage() {
 
   const [drawnFootprint, setDrawnFootprint] =
     useState<GeoJSON.Feature<GeoJSON.Polygon> | null>(null);
-
-  type FootprintHazards = {
-    flood: FootprintHazardAnalysis | null;
-    tsunami: FootprintHazardAnalysis | null;
-    landslide: FootprintHazardAnalysis | null;
-  };
 
   const [footprintHazards, setFootprintHazards] =
     useState<FootprintHazards>({
@@ -162,7 +149,7 @@ export default function SimulatePage() {
   const [
     additionalPopulation,
     setAdditionalPopulation,
-  ] = useState(1500);
+  ] = useState(0);
 
   const [
     permeableSurfacePercent,
@@ -259,21 +246,30 @@ export default function SimulatePage() {
     projectAreaHa,
   ]);
 
+  const hasValidFootprint =
+    projectAreaM2 > 0 &&
+    projectFootprint !== null;
+
+  const analysisReady =
+    hasValidFootprint &&
+    !footprintHazardsLoading;
+
   const simulationResult = useMemo(() => {
     return simulateDevelopment({
       baselinePopulation:
         baseline.population,
 
-      floodHazardAverage:
-        baseline.floodAverage,
-
       projectAreaHa,
+
       imperviousPercent,
       greenPercent,
       additionalPopulation,
 
-      baselineImperviousPercent: 40,
-      baselineGreenPercent: 40,
+      baselineImperviousPercent:
+        BASELINE_LAND_COVER.imperviousPercent,
+
+      baselineGreenPercent:
+        BASELINE_LAND_COVER.greenPercent,
 
       mitigation: {
         permeableSurfacePercent,
@@ -283,7 +279,6 @@ export default function SimulatePage() {
     });
   }, [
     baseline.population,
-    baseline.floodAverage,
     projectAreaHa,
     imperviousPercent,
     greenPercent,
@@ -293,45 +288,37 @@ export default function SimulatePage() {
     retentionFactor,
   ]);
 
-  const interpretation = useMemo(
-    () =>
-      generateScenarioInterpretation(
-        simulationResult,
-        {
-          baselinePopulation:
-            baseline.population,
+  const planningAssessment = useMemo(() => {
+    return buildPlanningAssessment({
+      projectAreaM2,
 
-          floodHazardAverage:
-            baseline.floodAverage,
-
-          projectAreaHa,
-          imperviousPercent,
-          greenPercent,
-          additionalPopulation,
-
-          baselineImperviousPercent: 40,
-          baselineGreenPercent: 40,
-
-          mitigation: {
-            permeableSurfacePercent,
-            greenInfrastructurePercent,
-            retentionFactor,
-          },
-        }
-      ),
-    [
-      simulationResult,
-      baseline.population,
-      baseline.floodAverage,
-      projectAreaHa,
       imperviousPercent,
+      baselineImperviousPercent:
+        BASELINE_LAND_COVER.imperviousPercent,
+
       greenPercent,
+      baselineGreenPercent:
+        BASELINE_LAND_COVER.greenPercent,
+
       additionalPopulation,
-      permeableSurfacePercent,
-      greenInfrastructurePercent,
-      retentionFactor,
-    ]
-  );
+
+      runoffChangePercent:
+        simulationResult.runoffChangePercent,
+
+      mitigationReductionPercent:
+        simulationResult.mitigationReductionPercent,
+
+      hazards: footprintHazards,
+    });
+  }, [
+    projectAreaM2,
+    imperviousPercent,
+    greenPercent,
+    additionalPopulation,
+    simulationResult.runoffChangePercent,
+    simulationResult.mitigationReductionPercent,
+    footprintHazards,
+  ]);
 
     useEffect(() => {
       if (!analysisCircle) {
@@ -540,12 +527,6 @@ export default function SimulatePage() {
       };
     }, [projectFootprint]);
 
-    console.log("PAGE STATE:", {
-      footprintMode,
-      widthM,
-      lengthM,
-    });
-
   return (
     <main className="h-[calc(100vh-73px)] bg-slate-50">
       <div className="flex h-full flex-col">
@@ -576,7 +557,7 @@ export default function SimulatePage() {
         </div>
 
         {/* Workspace */}
-        <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_320px]">
+        <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_360px]">
           <ScenarioPanel
             scenarioType={scenarioType}
             setScenarioType={
@@ -722,6 +703,7 @@ export default function SimulatePage() {
             imperviousPercent={imperviousPercent}
             greenPercent={greenPercent}
             additionalPopulation={additionalPopulation}
+
             baseline={baseline}
             simulation={simulationResult}
 
@@ -732,9 +714,16 @@ export default function SimulatePage() {
               greenInfrastructurePercent
             }
             retentionLevel={retentionLevel}
-            interpretation={interpretation}
+
             footprintHazards={footprintHazards}
-            footprintHazardsLoading={footprintHazardsLoading}
+            footprintHazardsLoading={
+              footprintHazardsLoading
+            }
+
+            assessment={planningAssessment}
+            hasValidFootprint={hasValidFootprint}
+            analysisReady={analysisReady}
+
           />
         </div>
       </div>

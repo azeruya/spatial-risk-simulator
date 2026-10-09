@@ -27,6 +27,47 @@ export type AreaUnit =
   | "m2"
   | "ha";
 
+export type FootprintHazardAnalysis = {
+  average: number | null;
+  maximum: number | null;
+  validSamples: number;
+  totalSamples: number;
+  coveragePercent: number;
+};
+
+export type FootprintHazards = {
+  flood: FootprintHazardAnalysis | null;
+  tsunami: FootprintHazardAnalysis | null;
+  landslide: FootprintHazardAnalysis | null;
+};
+
+export type PlanningAssessmentStatus =
+  | "low"
+  | "attention"
+  | "review";
+
+export type PlanningAssessmentSection = {
+  title: string;
+  items: string[];
+};
+
+export type PlanningAssessment = {
+  status: PlanningAssessmentStatus;
+
+  headline: string;
+  summary: string;
+
+  primaryConcern: string;
+  recommendedAction: string;
+
+  hazard: string[];
+  change: string[];
+  consequence: string[];
+
+  evidence: string[];
+  responses: string[];
+};
+
 export function areaToM2(
   value: number,
   unit: AreaUnit

@@ -1,10 +1,34 @@
+export type MitigationInput = {
+  /**
+   * Percent of paved / impervious surface treated
+   * with permeable materials.
+   */
+  permeableSurfacePercent: number;
+
+  /**
+   * Relative coverage/intensity of green infrastructure
+   * such as rain gardens, bioswales, or vegetated drainage.
+   */
+  greenInfrastructurePercent: number;
+
+  /**
+   * 0–1 fractional reduction representing retention/storage.
+   *
+   * Example:
+   * 0.10 = 10% runoff reduction
+   * 0.25 = 25% runoff reduction
+   */
+  retentionFactor: number;
+};
+
 export type SimulationInput = {
   baselinePopulation: number | null;
-  floodHazardAverage: number | null;
 
   projectAreaHa: number;
+
   imperviousPercent: number;
   greenPercent: number;
+
   additionalPopulation: number;
 
   baselineImperviousPercent: number;
@@ -14,7 +38,12 @@ export type SimulationInput = {
 };
 
 export type SimulationResult = {
-  // Land allocation
+  /*
+   * --------------------------------
+   * Land allocation
+   * --------------------------------
+   */
+
   projectAreaHa: number;
 
   baselineImperviousAreaHa: number;
@@ -26,7 +55,15 @@ export type SimulationResult = {
   imperviousChangeHa: number;
   greenChangeHa: number;
 
-  // Runoff
+  baselineOtherPercent: number;
+  scenarioOtherPercent: number;
+
+  /*
+   * --------------------------------
+   * Runoff model
+   * --------------------------------
+   */
+
   baselineRunoffCoefficient: number;
   scenarioRunoffCoefficient: number;
 
@@ -35,12 +72,31 @@ export type SimulationResult = {
 
   runoffChangePercent: number;
 
-  // Exposure
+  /*
+   * Mitigation
+   */
+
+  mitigationFactor: number;
+
+  mitigatedRunoffPressure: number;
+  mitigationReductionPercent: number;
+
+  /*
+   * --------------------------------
+   * Exposure
+   * --------------------------------
+   */
+
   baselinePopulation: number | null;
   scenarioPopulation: number | null;
   populationChange: number;
 
-  // Interpretation
+  /*
+   * --------------------------------
+   * Interpretation
+   * --------------------------------
+   */
+
   runoffDirection:
     | "lower"
     | "similar"
@@ -50,42 +106,59 @@ export type SimulationResult = {
     | "low"
     | "moderate"
     | "high";
-
-  mitigatedRunoffPressure: number;
-  mitigationReductionPercent: number;
 };
 
-export type MitigationInput = {
-  permeableSurfacePercent: number;
-  greenInfrastructurePercent: number;
-  retentionFactor: number;
-};
+/*
+ * ============================================================
+ * Model assumptions
+ * ============================================================
+ *
+ * These are simplified scenario coefficients used for
+ * comparative planning analysis.
+ *
+ * They are NOT calibrated flood-model parameters.
+ */
 
-export type ScenarioInterpretation = {
-  headline: string;
-  summary: string;
-  drivers: string[];
-  recommendation: string;
-};
+export const RUNOFF_COEFFICIENTS = {
+  impervious: 0.9,
+  green: 0.2,
+  other: 0.45,
+} as const;
+
+/*
+ * Approximate effectiveness assumptions for the
+ * simplified mitigation model.
+ */
+export const MITIGATION_EFFECTIVENESS = {
+  permeableSurface: 0.35,
+  greenInfrastructure: 0.25,
+} as const;
 
 export function simulateDevelopment(
   input: SimulationInput
 ): SimulationResult {
   const {
     baselinePopulation,
-    floodHazardAverage,
+
     projectAreaHa,
+
     imperviousPercent,
     greenPercent,
+
     additionalPopulation,
+
     baselineImperviousPercent,
     baselineGreenPercent,
-    mitigation,   
+
+    mitigation,
   } = input;
 
   /*
-   * Convert percentages into actual hectares.
+   * ============================================================
+   * 1. LAND ALLOCATION
+   * ============================================================
    */
+
   const baselineImperviousAreaHa =
     projectAreaHa *
     (baselineImperviousPercent / 100);
@@ -110,19 +183,39 @@ export function simulateDevelopment(
     scenarioGreenAreaHa -
     baselineGreenAreaHa;
 
+  const baselineOtherPercent = Math.max(
+    0,
+    100 -
+      baselineImperviousPercent -
+      baselineGreenPercent
+  );
+
+  const scenarioOtherPercent = Math.max(
+    0,
+    100 -
+      imperviousPercent -
+      greenPercent
+  );
+
   /*
-   * Simplified runoff coefficients.
+   * ============================================================
+   * 2. SURFACE RUNOFF TENDENCY
+   * ============================================================
    *
-   * Impervious surfaces contribute strongly
-   * to runoff.
+   * Weighted runoff coefficient:
    *
-   * Green/open surfaces contribute less.
+   * C =
+   *   imperviousShare × 0.90
+   * + greenShare      × 0.20
+   * + otherShare      × 0.45
    *
-   * Remaining land gets an intermediate value.
+   * Larger values represent a surface configuration
+   * more likely to convert rainfall into surface runoff.
    *
-   * These are scenario-model assumptions,
-   * NOT a hydraulic flood model.
+   * This is a comparative planning indicator,
+   * NOT predicted flood depth or probability.
    */
+
   const baselineRunoffCoefficient =
     calculateRunoffCoefficient(
       baselineImperviousPercent,
@@ -135,49 +228,26 @@ export function simulateDevelopment(
       greenPercent
     );
 
-  const permeableReduction =
-    mitigation.permeableSurfacePercent / 100;
-
-  const greenReduction =
-    mitigation.greenInfrastructurePercent / 100;
-
-  const effectiveScenarioRunoffCoefficient =
-    scenarioRunoffCoefficient *
-    (1 - permeableReduction * 0.35) *
-    (1 - greenReduction * 0.25);
-
   /*
-   * Existing mapped flood hazard acts as
-   * contextual sensitivity.
+   * For the MVP, runoff pressure is simply the normalized
+   * runoff tendency produced by the land-cover configuration.
    *
-   * If no flood value exists, use 0.5 only
-   * as a neutral model context, but the UI
-   * should disclose that mapped hazard data
-   * was unavailable.
+   * Hazard context is deliberately NOT included here.
+   * Hazard is combined with this result later in
+   * planning-assessment.ts.
    */
-  const floodContext =
-    floodHazardAverage ?? 0.5;
 
-  /*
-   * Normalized scenario pressure index.
-   *
-   * This is NOT flood probability or depth.
-   *
-   * It is useful for relative comparison:
-   * baseline vs proposed scenario.
-   */
   const baselineRunoffPressure =
-    baselineRunoffCoefficient *
-    (0.5 + floodContext * 0.5);
+    baselineRunoffCoefficient;
 
   const scenarioRunoffPressure =
-    scenarioRunoffCoefficient *
-    (0.5 + floodContext * 0.5);
+    scenarioRunoffCoefficient;
 
-  const mitigatedRunoffPressure =
-    effectiveScenarioRunoffCoefficient *
-    (0.5 + floodContext * 0.5) *
-    (1 - mitigation.retentionFactor);
+  /*
+   * ============================================================
+   * 3. DEVELOPMENT-INDUCED CHANGE
+   * ============================================================
+   */
 
   const runoffChangePercent =
     baselineRunoffPressure > 0
@@ -187,11 +257,84 @@ export function simulateDevelopment(
         100
       : 0;
 
+  /*
+   * ============================================================
+   * 4. MITIGATION
+   * ============================================================
+   *
+   * Simplified mitigation model:
+   *
+   * mitigationFactor =
+   *
+   * (1 - permeableTreatment × 0.35)
+   * ×
+   * (1 - greenInfrastructure × 0.25)
+   * ×
+   * (1 - retentionFactor)
+   *
+   * The coefficients are scenario assumptions and should
+   * be visible to the user through the methodology panel.
+   */
+
+  const permeableTreatment = clamp(
+    mitigation.permeableSurfacePercent /
+      100,
+    0,
+    1
+  );
+
+  const greenInfrastructureTreatment =
+    clamp(
+      mitigation.greenInfrastructurePercent /
+        100,
+      0,
+      1
+    );
+
+  const retentionFactor = clamp(
+    mitigation.retentionFactor,
+    0,
+    1
+  );
+
+  const mitigationFactor =
+    (1 -
+      permeableTreatment *
+        MITIGATION_EFFECTIVENESS.permeableSurface) *
+    (1 -
+      greenInfrastructureTreatment *
+        MITIGATION_EFFECTIVENESS.greenInfrastructure) *
+    (1 - retentionFactor);
+
+  const mitigatedRunoffPressure =
+    scenarioRunoffPressure *
+    mitigationFactor;
+
+  const mitigationReductionPercent =
+    scenarioRunoffPressure > 0
+      ? ((scenarioRunoffPressure -
+          mitigatedRunoffPressure) /
+          scenarioRunoffPressure) *
+        100
+      : 0;
+
+  /*
+   * ============================================================
+   * 5. POPULATION EXPOSURE
+   * ============================================================
+   */
+
   const scenarioPopulation =
     baselinePopulation !== null
       ? baselinePopulation +
         additionalPopulation
       : null;
+
+  /*
+   * ============================================================
+   * 6. SIMPLE INTERPRETATION
+   * ============================================================
+   */
 
   const runoffDirection =
     runoffChangePercent > 5
@@ -201,19 +344,9 @@ export function simulateDevelopment(
         : "similar";
 
   const impactLevel =
-    classifyImpact(
-      runoffChangePercent,
-      additionalPopulation,
-      floodContext
+    classifyRunoffImpact(
+      runoffChangePercent
     );
-
-  const mitigationReductionPercent =
-    scenarioRunoffPressure > 0
-      ? ((scenarioRunoffPressure -
-          mitigatedRunoffPressure) /
-          scenarioRunoffPressure) *
-        100
-      : 0;
 
   return {
     projectAreaHa,
@@ -227,6 +360,9 @@ export function simulateDevelopment(
     imperviousChangeHa,
     greenChangeHa,
 
+    baselineOtherPercent,
+    scenarioOtherPercent,
+
     baselineRunoffCoefficient,
     scenarioRunoffCoefficient,
 
@@ -235,6 +371,11 @@ export function simulateDevelopment(
 
     runoffChangePercent,
 
+    mitigationFactor,
+
+    mitigatedRunoffPressure,
+    mitigationReductionPercent,
+
     baselinePopulation,
     scenarioPopulation,
     populationChange:
@@ -242,13 +383,16 @@ export function simulateDevelopment(
 
     runoffDirection,
     impactLevel,
-
-    mitigatedRunoffPressure,
-    mitigationReductionPercent,
   };
 }
 
-function calculateRunoffCoefficient(
+/*
+ * ============================================================
+ * Weighted surface runoff coefficient
+ * ============================================================
+ */
+
+export function calculateRunoffCoefficient(
   imperviousPercent: number,
   greenPercent: number
 ) {
@@ -269,50 +413,36 @@ function calculateRunoffCoefficient(
     safeImpervious -
     safeGreen;
 
-  /*
-   * Simplified coefficients:
-   *
-   * impervious = 0.90
-   * green      = 0.20
-   * other      = 0.45
-   */
   return (
-    (safeImpervious / 100) * 0.9 +
-    (safeGreen / 100) * 0.2 +
-    (otherPercent / 100) * 0.45
+    (safeImpervious / 100) *
+      RUNOFF_COEFFICIENTS.impervious +
+    (safeGreen / 100) *
+      RUNOFF_COEFFICIENTS.green +
+    (otherPercent / 100) *
+      RUNOFF_COEFFICIENTS.other
   );
 }
 
-function classifyImpact(
-  runoffChangePercent: number,
-  additionalPopulation: number,
-  floodContext: number
+/*
+ * This classification is based ONLY on the magnitude
+ * of development-induced runoff change.
+ *
+ * Hazard severity is assessed separately in
+ * planning-assessment.ts.
+ */
+
+function classifyRunoffImpact(
+  runoffChangePercent: number
 ): "low" | "moderate" | "high" {
-  let score = 0;
+  const absoluteChange = Math.abs(
+    runoffChangePercent
+  );
 
-  if (runoffChangePercent >= 25) {
-    score += 2;
-  } else if (runoffChangePercent >= 10) {
-    score += 1;
-  }
-
-  if (additionalPopulation >= 2000) {
-    score += 2;
-  } else if (additionalPopulation >= 500) {
-    score += 1;
-  }
-
-  if (floodContext >= 0.66) {
-    score += 2;
-  } else if (floodContext >= 0.33) {
-    score += 1;
-  }
-
-  if (score >= 5) {
+  if (absoluteChange >= 25) {
     return "high";
   }
 
-  if (score >= 2) {
+  if (absoluteChange >= 10) {
     return "moderate";
   }
 
@@ -328,119 +458,4 @@ function clamp(
     Math.max(value, min),
     max
   );
-}
-
-export function generateScenarioInterpretation(
-  simulation: SimulationResult,
-  input: SimulationInput
-): ScenarioInterpretation {
-  const imperviousChange =
-    input.imperviousPercent -
-    input.baselineImperviousPercent;
-
-  const greenChange =
-    input.greenPercent -
-    input.baselineGreenPercent;
-
-  const floodHazard =
-    input.floodHazardAverage;
-
-  const drivers: string[] = [];
-
-  if (imperviousChange > 5) {
-    drivers.push(
-      `Impervious surface increases by ${imperviousChange.toFixed(
-        0
-      )} percentage points, reducing the area available for rainfall infiltration.`
-    );
-  }
-
-  if (greenChange < -5) {
-    drivers.push(
-      `Green and open space decreases by ${Math.abs(
-        greenChange
-      ).toFixed(
-        0
-      )} percentage points, reducing vegetation and permeable surface within the development footprint.`
-    );
-  }
-
-  if (input.additionalPopulation > 0) {
-    drivers.push(
-      `The proposal introduces approximately ${input.additionalPopulation.toLocaleString()} additional occupants within the surrounding hazard context.`
-    );
-  }
-
-  if (
-    floodHazard !== null &&
-    floodHazard >= 0.33
-  ) {
-    drivers.push(
-      "The selected area already contains mapped flood hazard, so additional runoff may place greater pressure on local drainage and flood-management capacity."
-    );
-  }
-
-  let headline: string;
-
-  if (simulation.runoffChangePercent >= 25) {
-    headline =
-      "Development substantially increases runoff pressure";
-  } else if (
-    simulation.runoffChangePercent >= 10
-  ) {
-    headline =
-      "Development moderately increases runoff pressure";
-  } else if (
-    simulation.runoffChangePercent > 5
-  ) {
-    headline =
-      "Development slightly increases runoff pressure";
-  } else if (
-    simulation.runoffChangePercent < -5
-  ) {
-    headline =
-      "Development reduces runoff pressure";
-  } else {
-    headline =
-      "Development has limited effect on runoff pressure";
-  }
-
-  const summary =
-    simulation.runoffDirection === "higher"
-      ? `The proposed scenario increases relative runoff pressure by ${simulation.runoffChangePercent.toFixed(
-          1
-        )}% compared with the baseline scenario. Increased impervious coverage means more rainfall is expected to become surface runoff rather than infiltrating into the ground.`
-      : simulation.runoffDirection === "lower"
-        ? `The proposed scenario reduces relative runoff pressure by ${Math.abs(
-            simulation.runoffChangePercent
-          ).toFixed(
-            1
-          )}% compared with the baseline scenario, mainly because the proposed land mix provides more permeable or vegetated surface.`
-        : "The proposed scenario produces little change in relative runoff pressure compared with the baseline scenario.";
-
-  let recommendation: string;
-
-  if (
-    simulation.mitigationReductionPercent >= 15
-  ) {
-    recommendation =
-      `The selected mitigation measures reduce scenario runoff pressure by ${simulation.mitigationReductionPercent.toFixed(
-        1
-      )}%. Maintaining these measures would improve the development's stormwater performance.`;
-  } else if (
-    simulation.runoffDirection === "higher"
-  ) {
-    recommendation =
-      "Consider increasing permeable surfaces, green infrastructure, or retention capacity to offset the increase in runoff pressure.";
-  } else {
-    recommendation =
-      "Maintain the current balance of permeable and green surfaces and review site-specific drainage requirements before implementation.";
-  }
-
-  return {
-    headline,
-    summary,
-    drivers,
-    recommendation,
-  };
 }
