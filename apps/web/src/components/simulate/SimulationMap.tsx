@@ -12,6 +12,10 @@ import { createRectangleFootprint } from "@/lib/geometry";
 
 import { TerraDraw, TerraDrawPolygonMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
+import bbox from "@turf/bbox";
+import difference from "@turf/difference";
+import bboxPolygon from "@turf/bbox-polygon";
+import { featureCollection } from "@turf/helpers";
 
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 
@@ -68,6 +72,35 @@ retentionLevel:
   mitigatedRunoffPressure: number;
   mitigationReductionPercent: number;
 };
+
+type HazardOverlay =
+  | "flood"
+  | "tsunami"
+  | "landslide"
+  | null;
+
+const HAZARD_STYLE = {
+  flood: {
+    opacity: 0.22,
+    tintOpacity: 0.08,
+    tint: "#f59e0b",
+    label: "Flood",
+  },
+
+  tsunami: {
+    opacity: 0.18,
+    tintOpacity: 0.10,
+    tint: "#06b6d4",
+    label: "Tsunami",
+  },
+
+  landslide: {
+    opacity: 0.22,
+    tintOpacity: 0.08,
+    tint: "#f97316",
+    label: "Landslide",
+  },
+} as const;
 
 function formatArea(projectAreaHa: number) {
   const areaM2 = projectAreaHa * 10_000;
@@ -165,6 +198,12 @@ export default function SimulationMap({
     greenInfrastructurePercent > 0 ||
     retentionLevel !== "none";
 
+  const [
+    hazardOverlay,
+    setHazardOverlay,
+  ] =
+    useState<HazardOverlay>(null);
+
   const drawRef =
     useRef<TerraDraw | null>(null);
 
@@ -199,6 +238,98 @@ export default function SimulationMap({
         };
     }
   }, [simulationView]);
+
+  const hazardOverlayBounds =
+    useMemo(() => {
+      if (!analysisCircle) {
+        return null;
+      }
+
+      const [
+        west,
+        south,
+        east,
+        north,
+      ] = bbox(analysisCircle);
+
+      return {
+        west,
+        south,
+        east,
+        north,
+      };
+    }, [analysisCircle]);
+
+  const hazardOverlayUrl =
+    useMemo(() => {
+      if (
+        !hazardOverlay ||
+        !hazardOverlayBounds
+      ) {
+        return null;
+      }
+
+      const {
+        west,
+        south,
+        east,
+        north,
+      } = hazardOverlayBounds;
+
+      const bboxValue =
+        [
+          west,
+          south,
+          east,
+          north,
+        ].join(",");
+
+      return (
+        `/api/bnpb/hazard-overlay` +
+        `?hazard=${hazardOverlay}` +
+        `&bbox=${encodeURIComponent(
+          bboxValue
+        )}`
+      );
+    }, [
+      hazardOverlay,
+      hazardOverlayBounds,
+    ]);
+
+  const analysisMask = useMemo(() => {
+    if (!analysisCircle) return null;
+
+    const [
+      minLon,
+      minLat,
+      maxLon,
+      maxLat,
+    ] = bbox(analysisCircle);
+
+    const lonPadding =
+      (maxLon - minLon) * 3;
+
+    const latPadding =
+      (maxLat - minLat) * 3;
+
+    const outer = bboxPolygon([
+      minLon - lonPadding,
+      minLat - latPadding,
+      maxLon + lonPadding,
+      maxLat + latPadding,
+    ]);
+
+    try {
+      return difference(
+        featureCollection([
+          outer,
+          analysisCircle,
+        ])
+      );
+    } catch {
+      return null;
+    }
+  }, [analysisCircle]);
 
   function handleMapClick(event: {
     lngLat: {
@@ -325,6 +456,202 @@ export default function SimulationMap({
             ))}
           </div>
         </div>
+
+        <div className="absolute right-4 top-16 z-20 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-sm backdrop-blur">
+          <div className="flex gap-1">
+            {(
+              [
+                ["none", "None"],
+                ["flood", "Flood"],
+                ["tsunami", "Tsunami"],
+                [
+                  "landslide",
+                  "Landslide",
+                ],
+              ] as const
+            ).map(([key, label]) => {
+              const value =
+                key === "none"
+                  ? null
+                  : key;
+
+              const active =
+                hazardOverlay === value;
+
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() =>
+                    setHazardOverlay(value)
+                  }
+                  className={`rounded-lg px-2.5 py-2 text-[10px] font-medium transition ${
+                    active
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-500 hover:bg-slate-100"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {hazardOverlay && (
+          <div className="absolute bottom-5 right-4 z-20 rounded-xl border border-white/40 bg-white/95 p-3 shadow-sm backdrop-blur">
+            <div className="flex items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{
+                  backgroundColor:
+                    HAZARD_STYLE[
+                      hazardOverlay
+                    ].tint,
+                }}
+              />
+
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">
+                  Hazard overlay
+                </p>
+
+                <p className="text-xs font-semibold text-slate-800">
+                  {
+                    HAZARD_STYLE[
+                      hazardOverlay
+                    ].label
+                  }
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-2 text-[9px] leading-4 text-slate-500">
+              Mapped BNPB InaRISK hazard
+              within the selected context area.
+            </p>
+          </div>
+        )}
+
+        {/* Hazard raster */}
+        {hazardOverlayUrl &&
+        hazardOverlayBounds && (
+          <Source
+            id="hazard-overlay"
+            type="image"
+            url={hazardOverlayUrl}
+            coordinates={[
+              [
+                hazardOverlayBounds.west,
+                hazardOverlayBounds.north,
+              ],
+              [
+                hazardOverlayBounds.east,
+                hazardOverlayBounds.north,
+              ],
+              [
+                hazardOverlayBounds.east,
+                hazardOverlayBounds.south,
+              ],
+              [
+                hazardOverlayBounds.west,
+                hazardOverlayBounds.south,
+              ],
+            ]}
+          >
+            <Layer
+              id="hazard-overlay-layer"
+              type="raster"
+              paint={{
+                "raster-opacity":
+                  hazardOverlay
+                    ? HAZARD_STYLE[
+                        hazardOverlay
+                      ].opacity
+                    : 0,
+                "raster-fade-duration": 200,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Hazard color tint */}
+        {analysisCircle &&
+        hazardOverlay && (
+          <Source
+            id="hazard-tint"
+            type="geojson"
+            data={analysisCircle}
+          >
+            <Layer
+              id="hazard-tint-fill"
+              type="fill"
+              paint={{
+                "fill-color":
+                  HAZARD_STYLE[
+                    hazardOverlay
+                  ].tint,
+                "fill-opacity": 0.08,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Outside mask */}
+        {analysisMask && (
+          <Source
+            id="analysis-mask"
+            type="geojson"
+            data={analysisMask}
+          >
+            <Layer
+              id="analysis-mask-fill"
+              type="fill"
+              paint={{
+                "fill-color":
+                  basemapMode === "satellite"
+                    ? "#0f172a"
+                    : "#f8fafc",
+
+                "fill-opacity":
+                  basemapMode === "satellite"
+                    ? 0.15
+                    : 0.5,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Context circle */}
+        {analysisCircle && (
+          <Source
+            id="analysis-context"
+            type="geojson"
+            data={analysisCircle}
+          >
+            <Layer
+              id="analysis-context-fill"
+              type="fill"
+              paint={{
+                "fill-color": "#2563eb",
+                "fill-opacity": 0.02,
+              }}
+            />
+
+            <Layer
+              id="analysis-context-outline"
+              type="line"
+              paint={{
+                "line-color": "#2563eb",
+                "line-width": 2.5,
+                "line-opacity": 0.9,
+                "line-dasharray": [
+                  2.5,
+                  1.5,
+                ],
+              }}
+            />
+          </Source>
+        )}
         
         {/* Proposed development footprint */}
         {projectFootprint && (
@@ -361,34 +688,6 @@ export default function SimulationMap({
                         footprintVisual.lineDasharray,
                     }
                   : {}),
-              }}
-            />
-          </Source>
-        )}
-
-        {analysisCircle && (
-          <Source
-            id="analysis-context"
-            type="geojson"
-            data={analysisCircle}
-          >
-            <Layer
-              id="analysis-context-fill"
-              type="fill"
-              paint={{
-                "fill-color": "#3b82f6",
-                "fill-opacity": 0.07,
-              }}
-            />
-
-            <Layer
-              id="analysis-context-outline"
-              type="line"
-              paint={{
-                "line-color": "#2563eb",
-                "line-width": 2.5,
-                "line-opacity": 0.9,
-                "line-dasharray": [2.5, 1.5],
               }}
             />
           </Source>
