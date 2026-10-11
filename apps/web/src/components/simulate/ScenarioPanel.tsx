@@ -605,8 +605,8 @@ export default function ScenarioPanel({
 
             <div className="mt-4 space-y-5">
                 <ScenarioSlider
-                label="Permeable surface"
-                description="Replace part of paved area with permeable materials"
+                label="Permeable replacement"
+                description="Replace part of conventional paved surface with permeable materials"
                 value={permeableSurfacePercent}
                 onChange={setPermeableSurfacePercent}
                 />
@@ -622,8 +622,9 @@ export default function ScenarioPanel({
 
                 <div>
                 <label className="text-xs font-medium text-slate-600">
-                    Retention capacity
+                    Stormwater retention
                 </label>
+                <div className="text-sm">Temporary on-site runoff storage</div>
 
                 <select
                     value={retentionLevel}

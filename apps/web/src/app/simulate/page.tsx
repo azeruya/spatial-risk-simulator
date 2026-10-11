@@ -3,6 +3,7 @@
 import { useMemo, useEffect, useState } from "react";
 import { circle } from "@turf/circle";
 import { area } from "@turf/area";
+import { useSearchParams } from "next/navigation";
 
 import ScenarioPanel, { ScenarioType } from "@/components/simulate/ScenarioPanel";
 import SimulationMap, { SelectedSite } from "@/components/simulate/SimulationMap";
@@ -88,6 +89,13 @@ export default function SimulatePage() {
   const [scenarioType, setScenarioType] =
     useState<ScenarioType>("expansion");
 
+  const searchParams =
+    useSearchParams();
+
+  const siteImportedFromRisk =
+    searchParams.has("lat") &&
+    searchParams.has("lon");
+
   const [footprintMode, setFootprintMode] =
     useState<FootprintMode>("area");
 
@@ -168,6 +176,7 @@ export default function SimulatePage() {
 
   const [simulationView, setSimulationView] =
   useState<SimulationView>("proposed");
+
 
   const analysisCircle = useMemo(() => {
     if (!selectedSite) return null;
@@ -319,6 +328,56 @@ export default function SimulatePage() {
     simulationResult.mitigationReductionPercent,
     footprintHazards,
   ]);
+
+  const hasMitigation =
+    permeableSurfacePercent > 0 ||
+    greenInfrastructurePercent > 0 ||
+    retentionLevel !== "none";
+
+    useEffect(() => {
+      if (
+        simulationView === "mitigated" &&
+        !hasMitigation
+      ) {
+        setSimulationView("proposed");
+      }
+    }, [
+      simulationView,
+      hasMitigation,
+    ]);
+
+    useEffect(() => {
+      const latParam =
+        searchParams.get("lat");
+
+      const lonParam =
+        searchParams.get("lon");
+
+      if (
+        latParam === null ||
+        lonParam === null
+      ) {
+        return;
+      }
+
+      const latitude =
+        Number(latParam);
+
+      const longitude =
+        Number(lonParam);
+
+      if (
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude)
+      ) {
+        return;
+      }
+
+      setSelectedSite({
+        latitude,
+        longitude,
+      });
+    }, [searchParams]);
 
     useEffect(() => {
       if (!analysisCircle) {
@@ -553,6 +612,11 @@ export default function SimulatePage() {
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
               Live scenario
             </div>
+            {siteImportedFromRisk && (
+              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-[11px] font-medium text-blue-700">
+                Site imported from Risk Intelligence
+              </div>
+            )}
           </div>
         </div>
 
@@ -660,13 +724,11 @@ export default function SimulatePage() {
               projectAreaHa={projectAreaHa}
 
               footprintMode={footprintMode}
-
               widthM={widthM}
               lengthM={lengthM}
               bearing={bearing}
 
               projectFootprint={projectFootprint}
-
               setDrawnFootprint={setDrawnFootprint}
 
               isDrawing={isDrawing}
@@ -675,25 +737,50 @@ export default function SimulatePage() {
               imperviousPercent={imperviousPercent}
               greenPercent={greenPercent}
 
+              permeableSurfacePercent={
+                permeableSurfacePercent
+              }
+              greenInfrastructurePercent={
+                greenInfrastructurePercent
+              }
+              retentionLevel={retentionLevel}
+
               simulationView={simulationView}
             />
             <div className="absolute left-1/2 top-5 z-10 -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-sm backdrop-blur">
               <div className="flex gap-1">
-                {(["current", "proposed", "mitigated"] as const).map(
-                  (view) => (
+                {(
+                  ["current", "proposed", "mitigated"] as const
+                ).map((view) => {
+                  const isMitigated =
+                    view === "mitigated";
+
+                  const disabled =
+                    isMitigated &&
+                    !hasMitigation;
+
+                  return (
                     <button
                       key={view}
-                      onClick={() => setSimulationView(view)}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => {
+                        if (!disabled) {
+                          setSimulationView(view);
+                        }
+                      }}
                       className={`rounded-lg px-3 py-2 text-xs font-medium capitalize transition ${
                         simulationView === view
                           ? "bg-slate-900 text-white"
-                          : "text-slate-500 hover:bg-slate-100"
+                          : disabled
+                            ? "cursor-not-allowed text-slate-300"
+                            : "text-slate-500 hover:bg-slate-100"
                       }`}
                     >
                       {view}
                     </button>
-                  )
-                )}
+                  );
+                })}
               </div>
             </div>
           </div>

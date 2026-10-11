@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import type { Earthquake } from "@/types/earthquake";
 import type { WeatherForecastResponse } from "@/types/weather";
 import BaseMap from "@/components/map/BaseMap";
@@ -64,6 +65,30 @@ export default function LiveMapPanel({
             Current disaster and environmental information.
           </p>
         </div>
+
+        <section className="mt-6">
+          <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-600">
+              Next step
+            </p>
+
+            <p className="mt-2 text-sm font-semibold text-slate-900">
+              Understand spatial risk in Padang
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              Move from current conditions to long-term flood,
+              tsunami, landslide, and population risk.
+            </p>
+
+            <Link
+              href="/risk"
+              className="mt-4 inline-flex items-center text-xs font-semibold text-blue-700 hover:text-blue-800"
+            >
+              Open Risk Intelligence →
+            </Link>
+          </div>
+        </section>
 
         <section className="mt-8">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">

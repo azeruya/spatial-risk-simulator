@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useEffect, useRef } from "react";
+import { useMemo, useEffect, useRef, useState } from "react";
 
 import Map, { Layer, Marker, Source, MapRef} from "react-map-gl/maplibre";
 import { setWorkerUrl } from "maplibre-gl";
@@ -15,6 +15,8 @@ import { TerraDraw, TerraDrawPolygonMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
+
+type BasemapMode = | "streets" | "satellite";
 
 export type SelectedSite = {
   longitude: number;
@@ -49,6 +51,15 @@ type SimulationMapProps = {
   imperviousPercent: number;
   greenPercent: number;
 
+  permeableSurfacePercent: number;
+  greenInfrastructurePercent: number;
+
+retentionLevel:
+  | "none"
+  | "low"
+  | "moderate"
+  | "high";
+
   simulationView: SimulationView;
 };
 
@@ -81,6 +92,10 @@ export default function SimulationMap({
 
   imperviousPercent,
   greenPercent,
+
+  permeableSurfacePercent,
+  greenInfrastructurePercent,
+  retentionLevel,
 
   simulationView,
 }: SimulationMapProps) {
@@ -116,10 +131,82 @@ export default function SimulationMap({
   );
   }, [selectedSite]);
 
+  const [ basemapMode, setBasemapMode ] = useState<BasemapMode>("satellite");
+
+  const STREET_STYLE =
+  "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+
+  const ARCGIS_API_KEY =
+  process.env.NEXT_PUBLIC_ARCGIS_API_KEY;
+
+  const SATELLITE_STYLE = {
+    version: 8 as const,
+
+    sources: {
+      satellite: {
+        type: "raster" as const,
+
+        tiles: [
+          "https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}?token=YOUR_ARCGIS_TOKEN",
+        ],
+
+        tileSize: 256,
+
+        attribution:
+          "Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+      },
+    },
+
+    layers: [
+      {
+        id: "satellite",
+        type: "raster" as const,
+        source: "satellite",
+      },
+    ],
+  };
+
   const mapRef = useRef<MapRef | null>(null);
+
+  const hasMitigation =
+    permeableSurfacePercent > 0 ||
+    greenInfrastructurePercent > 0 ||
+    retentionLevel !== "none";
 
   const drawRef =
     useRef<TerraDraw | null>(null);
+
+  const footprintVisual = useMemo(() => {
+    switch (simulationView) {
+      case "current":
+        return {
+          fillColor: "#64748b",
+          fillOpacity: 0.04,
+          lineColor: "#ffffff",
+          lineWidth: 2,
+          lineDasharray: [2, 2] as number[],
+        };
+
+      case "mitigated":
+        return {
+          fillColor: "#10b981",
+          fillOpacity: 0.22,
+          lineColor: "#059669",
+          lineWidth: 3,
+          lineDasharray: undefined,
+        };
+
+      case "proposed":
+      default:
+        return {
+          fillColor: "#2563eb",
+          fillOpacity: 0.22,
+          lineColor: "#2563eb",
+          lineWidth: 3,
+          lineDasharray: undefined,
+        };
+    }
+  }, [simulationView]);
 
   function handleMapClick(event: {
     lngLat: {
@@ -213,10 +300,39 @@ export default function SimulationMap({
           width: "100%",
           height: "100%",
         }}
-        mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+        mapStyle={
+          basemapMode === "satellite"
+            ? SATELLITE_STYLE
+            : STREET_STYLE
+        }
         cursor="crosshair"
         onClick={handleMapClick}
       >
+        <div className="absolute right-4 top-4 z-20 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-sm backdrop-blur">
+          <div className="flex gap-1">
+            {(
+              [
+                ["streets", "Map"],
+                ["satellite", "Satellite"],
+              ] as const
+            ).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() =>
+                  setBasemapMode(mode)
+                }
+                className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
+                  basemapMode === mode
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-500 hover:bg-slate-100"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         {analysisArea && (
           <Source
             id="analysis-context"
@@ -254,8 +370,11 @@ export default function SimulationMap({
               id="project-footprint-fill"
               type="fill"
               paint={{
-                "fill-color": "#2563eb",
-                "fill-opacity": 0.18,
+                "fill-color":
+                  footprintVisual.fillColor,
+
+                "fill-opacity":
+                  footprintVisual.fillOpacity,
               }}
             />
 
@@ -263,8 +382,18 @@ export default function SimulationMap({
               id="project-footprint-outline"
               type="line"
               paint={{
-                "line-color": "#2563eb",
-                "line-width": 2.5,
+                "line-color":
+                  footprintVisual.lineColor,
+
+                "line-width":
+                  footprintVisual.lineWidth,
+
+                ...(footprintVisual.lineDasharray
+                  ? {
+                      "line-dasharray":
+                        footprintVisual.lineDasharray,
+                    }
+                  : {}),
               }}
             />
           </Source>
@@ -309,46 +438,116 @@ export default function SimulationMap({
                   ? `${widthM} m × ${lengthM} m`
                   : `≈ ${Math.round(footprintRadiusMeters)} m equivalent radius`}
           </p>
-
-          <p className="mt-1 text-[11px] text-slate-400">
-            {footprintMode === "dimensions"
-              ? `${widthM} m × ${lengthM} m`
-              : `≈ ${Math.round(footprintRadiusMeters)} m equivalent radius`}
-          </p>
         </div>
       )}
 
-      {/* Land allocation mini panel */}
       {selectedSite && (
-        <div className="absolute bottom-5 left-5 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-            Development mix
-          </p>
-
-          <div className="mt-2 flex gap-4 text-xs">
-            <div>
-              <p className="text-slate-400">
-                Impervious
+        <div className="absolute bottom-5 left-5 z-10 w-48 rounded-xl border border-white/40 bg-white/95 p-3 shadow-sm backdrop-blur">
+          {simulationView === "current" && (
+            <>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Current site
               </p>
 
-              <p className="mt-0.5 font-semibold text-slate-800">
-                {imperviousPercent}%
-              </p>
-            </div>
-
-            <div>
-              <p className="text-slate-400">
-                Green
+              <p className="mt-1 text-xs font-semibold text-slate-800">
+                Existing condition
               </p>
 
-              <p className="mt-0.5 font-semibold text-slate-800">
-                {greenPercent}%
+              <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                Satellite imagery shows the existing physical site before the proposed development.
               </p>
-            </div>
-          </div>
+            </>
+          )}
+
+          {simulationView === "proposed" && (
+            <>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-600">
+                Proposed development
+              </p>
+
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <MapMetric
+                  label="Impervious"
+                  value={`${imperviousPercent}%`}
+                />
+
+                <MapMetric
+                  label="Green"
+                  value={`${greenPercent}%`}
+                />
+              </div>
+            </>
+          )}
+
+          {simulationView === "mitigated" && (
+            <>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
+                Mitigated design
+              </p>
+
+              <p className="mt-1 text-xs font-semibold text-slate-800">
+                Improved site response
+              </p>
+
+              {!hasMitigation ? (
+                <p className="mt-2 text-[10px] leading-4 text-slate-500">
+                  No mitigation measures have been applied yet.
+                </p>
+              ) : (
+                <div className="mt-2 space-y-1 text-[10px] text-slate-500">
+                  {permeableSurfacePercent > 0 && (
+                    <p>
+                      Permeable surface:{" "}
+                      <span className="font-semibold text-slate-700">
+                        {permeableSurfacePercent}%
+                      </span>
+                    </p>
+                  )}
+
+                  {greenInfrastructurePercent > 0 && (
+                    <p>
+                      Green infrastructure:{" "}
+                      <span className="font-semibold text-slate-700">
+                        {greenInfrastructurePercent}%
+                      </span>
+                    </p>
+                  )}
+
+                  {retentionLevel !== "none" && (
+                    <p>
+                      Retention:{" "}
+                      <span className="font-semibold capitalize text-slate-700">
+                        {retentionLevel}
+                      </span>
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
       
+    </div>
+  );
+}
+
+function MapMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div>
+      <p className="text-[9px] text-slate-400">
+        {label}
+      </p>
+
+      <p className="mt-0.5 text-xs font-semibold text-slate-800">
+        {value}
+      </p>
     </div>
   );
 }

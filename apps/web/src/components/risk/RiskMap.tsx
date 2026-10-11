@@ -3,9 +3,11 @@
 import { useMemo, useState, useEffect } from "react";
 import Map, { Marker, Source, Layer } from "react-map-gl/maplibre";
 import { setWorkerUrl } from "maplibre-gl";
-
 import "maplibre-gl/dist/maplibre-gl.css";
 import { circle } from "@turf/circle";
+
+import Link from "next/link";
+import { buildLocationUrl } from "@/lib/navigation";
 
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 
@@ -724,6 +726,36 @@ export default function RiskMap() {
                   {keyConcern}
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* Continue to simulation */}
+          <div className="mt-5 border-t border-slate-100 pt-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              Next step
+            </p>
+
+            <div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+              <p className="text-xs font-semibold text-slate-800">
+                Test a development scenario
+              </p>
+
+              <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                Continue with this exact location and explore
+                how a proposed development could change runoff,
+                green space, and population exposure.
+              </p>
+
+              <Link
+                href={buildLocationUrl(
+                  "/simulate",
+                  selectedPoint.latitude,
+                  selectedPoint.longitude
+                )}
+                className="mt-3 inline-flex w-full items-center justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+              >
+                Simulate development here →
+              </Link>
             </div>
           </div>
 
