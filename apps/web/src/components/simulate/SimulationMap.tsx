@@ -4,7 +4,6 @@ import { useMemo, useEffect, useRef, useState } from "react";
 
 import Map, { Layer, Marker, Source, MapRef} from "react-map-gl/maplibre";
 import { setWorkerUrl } from "maplibre-gl";
-import { circle } from "@turf/circle";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import { SimulationView } from "@/app/simulate/page";
@@ -45,6 +44,10 @@ type SimulationMapProps = {
     footprint: GeoJSON.Feature<GeoJSON.Polygon> | null
   ) => void;
 
+  analysisCircle:
+    | GeoJSON.Feature<GeoJSON.Polygon>
+    | null;
+
   isDrawing: boolean;
   setIsDrawing: (value: boolean) => void;
 
@@ -61,6 +64,9 @@ retentionLevel:
   | "high";
 
   simulationView: SimulationView;
+  scenarioRunoffPressure: number;
+  mitigatedRunoffPressure: number;
+  mitigationReductionPercent: number;
 };
 
 function formatArea(projectAreaHa: number) {
@@ -98,6 +104,10 @@ export default function SimulationMap({
   retentionLevel,
 
   simulationView,
+  analysisCircle,
+  scenarioRunoffPressure,
+  mitigatedRunoffPressure,
+  mitigationReductionPercent,
 }: SimulationMapProps) {
   /*
    * Convert hectares into the radius of an equivalent circle.
@@ -112,24 +122,6 @@ export default function SimulationMap({
 
     return Math.sqrt(areaM2 / Math.PI);
   }, [projectAreaHa]);
-
-  const analysisRadiusMeters = 500;
-
-  const analysisArea = useMemo(() => {
-  if (!selectedSite) return null;
-
-  return circle(
-    [
-    selectedSite.longitude,
-    selectedSite.latitude,
-    ],
-    analysisRadiusMeters / 1000,
-    {
-    steps: 64,
-    units: "kilometers",
-    }
-  );
-  }, [selectedSite]);
 
   const [ basemapMode, setBasemapMode ] = useState<BasemapMode>("satellite");
 
@@ -333,32 +325,7 @@ export default function SimulationMap({
             ))}
           </div>
         </div>
-        {analysisArea && (
-          <Source
-            id="analysis-context"
-            type="geojson"
-            data={analysisArea}
-          >
-            <Layer
-              id="analysis-context-fill"
-              type="fill"
-              paint={{
-                "fill-color": "#64748b",
-                "fill-opacity": 0.04,
-              }}
-            />
-
-            <Layer
-              id="analysis-context-outline"
-              type="line"
-              paint={{
-                "line-color": "#64748b",
-                "line-width": 1.5,
-                "line-dasharray": [3, 2],
-              }}
-            />
-          </Source>
-        )}
+        
         {/* Proposed development footprint */}
         {projectFootprint && (
           <Source
@@ -394,6 +361,34 @@ export default function SimulationMap({
                         footprintVisual.lineDasharray,
                     }
                   : {}),
+              }}
+            />
+          </Source>
+        )}
+
+        {analysisCircle && (
+          <Source
+            id="analysis-context"
+            type="geojson"
+            data={analysisCircle}
+          >
+            <Layer
+              id="analysis-context-fill"
+              type="fill"
+              paint={{
+                "fill-color": "#3b82f6",
+                "fill-opacity": 0.07,
+              }}
+            />
+
+            <Layer
+              id="analysis-context-outline"
+              type="line"
+              paint={{
+                "line-color": "#2563eb",
+                "line-width": 2.5,
+                "line-opacity": 0.9,
+                "line-dasharray": [2.5, 1.5],
               }}
             />
           </Source>
@@ -489,40 +484,70 @@ export default function SimulationMap({
                 Improved site response
               </p>
 
-              {!hasMitigation ? (
-                <p className="mt-2 text-[10px] leading-4 text-slate-500">
-                  No mitigation measures have been applied yet.
+              <div className="mt-3 rounded-lg bg-emerald-50 p-2.5">
+                <p className="text-[9px] font-medium uppercase tracking-wide text-emerald-700">
+                  Comparative runoff tendency
                 </p>
-              ) : (
-                <div className="mt-2 space-y-1 text-[10px] text-slate-500">
+
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="text-sm font-semibold text-slate-700">
+                    {scenarioRunoffPressure.toFixed(3)}
+                  </span>
+
+                  <span className="text-xs text-slate-300">
+                    →
+                  </span>
+
+                  <span className="text-sm font-semibold text-emerald-700">
+                    {mitigatedRunoffPressure.toFixed(3)}
+                  </span>
+                </div>
+
+                <p className="mt-1 text-[10px] font-semibold text-emerald-700">
+                  ↓ {mitigationReductionPercent.toFixed(1)}%
+                </p>
+              </div>
+
+              <div className="mt-3">
+                <p className="text-[9px] font-medium uppercase tracking-wide text-slate-400">
+                  {[
+                    permeableSurfacePercent > 0,
+                    greenInfrastructurePercent > 0,
+                    retentionLevel !== "none",
+                  ].filter(Boolean).length}{" "}
+                  intervention
+                  {[
+                    permeableSurfacePercent > 0,
+                    greenInfrastructurePercent > 0,
+                    retentionLevel !== "none",
+                  ].filter(Boolean).length === 1
+                    ? ""
+                    : "s"}{" "}
+                  applied
+                </p>
+
+                <div className="mt-1 space-y-0.5 text-[10px] leading-4 text-slate-500">
                   {permeableSurfacePercent > 0 && (
                     <p>
-                      Permeable surface:{" "}
-                      <span className="font-semibold text-slate-700">
-                        {permeableSurfacePercent}%
-                      </span>
+                      Permeable replacement ·{" "}
+                      {permeableSurfacePercent}%
                     </p>
                   )}
 
                   {greenInfrastructurePercent > 0 && (
                     <p>
-                      Green infrastructure:{" "}
-                      <span className="font-semibold text-slate-700">
-                        {greenInfrastructurePercent}%
-                      </span>
+                      Green infrastructure ·{" "}
+                      {greenInfrastructurePercent}%
                     </p>
                   )}
 
                   {retentionLevel !== "none" && (
-                    <p>
-                      Retention:{" "}
-                      <span className="font-semibold capitalize text-slate-700">
-                        {retentionLevel}
-                      </span>
+                    <p className="capitalize">
+                      Retention · {retentionLevel}
                     </p>
                   )}
                 </div>
-              )}
+              </div>
             </>
           )}
         </div>

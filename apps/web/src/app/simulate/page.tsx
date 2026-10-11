@@ -3,6 +3,7 @@
 import { useMemo, useEffect, useState } from "react";
 import { circle } from "@turf/circle";
 import { area } from "@turf/area";
+import centroid from "@turf/centroid";
 import { useSearchParams } from "next/navigation";
 
 import ScenarioPanel, { ScenarioType } from "@/components/simulate/ScenarioPanel";
@@ -177,23 +178,6 @@ export default function SimulatePage() {
   const [simulationView, setSimulationView] =
   useState<SimulationView>("proposed");
 
-
-  const analysisCircle = useMemo(() => {
-    if (!selectedSite) return null;
-
-    return circle(
-      [
-        selectedSite.longitude,
-        selectedSite.latitude,
-      ],
-      0.5,
-      {
-        steps: 64,
-        units: "kilometers",
-      }
-    );
-  }, [selectedSite]);
-
   const [baseline, setBaseline] =
     useState<SimulationBaseline>({
       status: "idle",
@@ -203,6 +187,11 @@ export default function SimulatePage() {
       floodMaximum: null,
       floodCoveragePercent: null,
     });
+
+  const [
+    analysisRadiusMeters,
+    setAnalysisRadiusMeters,
+  ] = useState<250 | 500 | 1000>(500);
 
   const retentionFactor = {
     none: 0,
@@ -253,6 +242,42 @@ export default function SimulatePage() {
     lengthM,
     bearing,
     projectAreaHa,
+  ]);
+
+  const analysisCenter = useMemo(() => {
+      if (projectFootprint) {
+        const center = centroid(projectFootprint);
+
+        return {
+          longitude: center.geometry.coordinates[0],
+          latitude: center.geometry.coordinates[1],
+        };
+      }
+
+      return selectedSite;
+    }, [
+      projectFootprint,
+      selectedSite,
+    ]);
+
+
+  const analysisCircle = useMemo(() => {
+    if (!analysisCenter) return null;
+
+    return circle(
+      [
+        analysisCenter.longitude,
+        analysisCenter.latitude,
+      ],
+      analysisRadiusMeters / 1000,
+      {
+        steps: 64,
+        units: "kilometers",
+      }
+    );
+  }, [
+    analysisCenter,
+    analysisRadiusMeters,
   ]);
 
   const hasValidFootprint =
@@ -402,9 +427,35 @@ export default function SimulatePage() {
         }));
 
         try {
-          const [populationResponse, floodResponse] =
-            await Promise.all([
-              fetch("/api/population/exposure", {
+          const [
+            populationResult,
+            floodResult,
+          ] = await Promise.allSettled([
+            fetch("/api/population/exposure", {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body: JSON.stringify({
+                polygon: analysisCircle,
+                radiusMeters:
+                  analysisRadiusMeters,
+              }),
+              signal: controller.signal,
+            }).then(async (response) => {
+              if (!response.ok) {
+                throw new Error(
+                  "Population request failed"
+                );
+              }
+
+              return response.json();
+            }),
+
+            fetch(
+              "/api/bnpb/flood-hazard/area",
+              {
                 method: "POST",
                 headers: {
                   "Content-Type":
@@ -412,94 +463,93 @@ export default function SimulatePage() {
                 },
                 body: JSON.stringify({
                   polygon: analysisCircle,
-                  year: 2025,
+                  radiusMeters:
+                    analysisRadiusMeters,
                 }),
                 signal: controller.signal,
-              }),
+              }
+            ).then(async (response) => {
+              if (!response.ok) {
+                throw new Error(
+                  "Flood context request failed"
+                );
+              }
 
-              fetch(
-                "/api/bnpb/flood-hazard/area",
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type":
-                      "application/json",
-                  },
-                  body: JSON.stringify({
-                    polygon: analysisCircle,
-                    sampleCount: 25,
-                  }),
-                  signal: controller.signal,
-                }
-              ),
-            ]);
-
-          if (
-            !populationResponse.ok ||
-            !floodResponse.ok
-          ) {
-            throw new Error(
-              "Unable to load baseline"
-            );
-          }
+              return response.json();
+            }),
+          ]);
 
           const populationData =
-            await populationResponse.json();
+            populationResult.status ===
+            "fulfilled"
+              ? populationResult.value
+              : null;
 
           const floodData =
-            await floodResponse.json();
+            floodResult.status === "fulfilled"
+              ? floodResult.value
+              : null;
 
           const population =
-            typeof populationData.population ===
+            typeof populationData?.population ===
             "number"
               ? populationData.population
               : null;
 
-          const areaKm2 =
-            Math.PI * 0.5 * 0.5;
+          const radiusKm =
+            analysisRadiusMeters / 1000;
 
-          const density =
-            population !== null
+          const areaKm2 =
+            Math.PI *
+            radiusKm *
+            radiusKm;
+
+          const populationDensity =
+            population !== null &&
+            areaKm2 > 0
               ? population / areaKm2
               : null;
 
-          const coverage =
-            floodData.totalSamples > 0
-              ? Math.round(
-                  (floodData.validSamples /
-                    floodData.totalSamples) *
-                    100
-                )
-              : null;
-
           setBaseline({
-            status: "success",
+            status:
+              populationData || floodData
+                ? "success"
+                : "error",
 
             population,
 
-            populationDensity: density,
+            populationDensity,
 
             floodAverage:
-              typeof floodData.average ===
+              typeof floodData?.average ===
               "number"
                 ? floodData.average
                 : null,
 
             floodMaximum:
-              typeof floodData.maximum ===
+              typeof floodData?.maximum ===
               "number"
                 ? floodData.maximum
                 : null,
 
-            floodCoveragePercent: coverage,
+            floodCoveragePercent:
+              typeof floodData?.coveragePercent ===
+              "number"
+                ? floodData.coveragePercent
+                : null,
           });
         } catch (error) {
           if (
-            error instanceof Error &&
+            error instanceof DOMException &&
             error.name === "AbortError"
           ) {
             return;
           }
+
+          console.error(
+            "Baseline analysis failed:",
+            error
+          );
 
           setBaseline((current) => ({
             ...current,
@@ -513,7 +563,10 @@ export default function SimulatePage() {
       return () => {
         controller.abort();
       };
-    }, [analysisCircle]);
+    }, [
+      analysisCircle,
+      analysisRadiusMeters,
+    ]);       
 
     useEffect(() => {
       if (!projectFootprint) {
@@ -746,6 +799,16 @@ export default function SimulatePage() {
               retentionLevel={retentionLevel}
 
               simulationView={simulationView}
+              analysisCircle={analysisCircle}
+              scenarioRunoffPressure={
+                simulationResult.scenarioRunoffPressure
+              }
+              mitigatedRunoffPressure={
+                simulationResult.mitigatedRunoffPressure
+              }
+              mitigationReductionPercent={
+                simulationResult.mitigationReductionPercent
+              }
             />
             <div className="absolute left-1/2 top-5 z-10 -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-sm backdrop-blur">
               <div className="flex gap-1">
@@ -811,6 +874,10 @@ export default function SimulatePage() {
             hasValidFootprint={hasValidFootprint}
             analysisReady={analysisReady}
 
+            analysisRadiusMeters={analysisRadiusMeters}
+            setAnalysisRadiusMeters={
+            setAnalysisRadiusMeters
+          }
           />
         </div>
       </div>

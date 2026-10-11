@@ -606,14 +606,14 @@ export default function ScenarioPanel({
             <div className="mt-4 space-y-5">
                 <ScenarioSlider
                 label="Permeable replacement"
-                description="Replace part of conventional paved surface with permeable materials"
+                description="Percentage of proposed impervious surface replaced with permeable materials."
                 value={permeableSurfacePercent}
                 onChange={setPermeableSurfacePercent}
                 />
 
                 <ScenarioSlider
-                label="Green infrastructure"
-                description="Rain gardens, bioswales and vegetated surfaces"
+                label="Green infrastructure treatment"
+                description="Stormwater features such as rain gardens, bioswales, vegetated drainage, and infiltration areas"
                 value={greenInfrastructurePercent}
                 onChange={
                     setGreenInfrastructurePercent
