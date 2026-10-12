@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Earthquake } from "@/types/earthquake";
 import type { WeatherForecastResponse } from "@/types/weather";
 import BaseMap from "@/components/map/BaseMap";
+import StatusBadge from "../ui/StatusBadge";
 
 type LiveMapPanelProps = {
   latest: Earthquake;
@@ -22,6 +23,10 @@ export default function LiveMapPanel({
   const [showSignificant, setShowSignificant] = useState(true);
   const [showFelt, setShowFelt] = useState(false);
   const [showLatest, setShowLatest] = useState(true);
+  const [showAllEvents, setShowAllEvents] = useState(false);
+  const recentEvents = showAllEvents
+    ? significantEarthquakes
+    : significantEarthquakes.slice(0, 4);
   const [selectedEarthquake, setSelectedEarthquake] =
     useState<Earthquake | null>(null);
 
@@ -55,47 +60,32 @@ export default function LiveMapPanel({
 
   return (
     <div className="flex h-full">
-      <aside className="w-80 shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-5">
+      <aside className="w-80 shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-5 shadow-[6px_0_18px_rgba(15,23,42,0.05)]">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">
-            Live Conditions
+          <p className="ui-section-label text-emerald-600">
+            Live
+          </p>
+
+          <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">
+            See what is happening now.
           </h1>
 
-          <p className="mt-1 text-sm text-slate-500">
-            Current disaster and environmental information.
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Monitor current earthquake and environmental conditions.
           </p>
         </div>
 
-        <section className="mt-6">
-          <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-600">
-              Next step
-            </p>
-
-            <p className="mt-2 text-sm font-semibold text-slate-900">
-              Understand spatial risk in Padang
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-slate-600">
-              Move from current conditions to long-term flood,
-              tsunami, landslide, and population risk.
-            </p>
-
-            <Link
-              href="/risk"
-              className="mt-4 inline-flex items-center text-xs font-semibold text-blue-700 hover:text-blue-800"
-            >
-              Open Risk Intelligence →
-            </Link>
-          </div>
-        </section>
+        <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-medium text-emerald-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          BMKG data connected
+        </div>
 
         <section className="mt-8">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
             Latest earthquake
           </p>
 
-          <div className="mt-3 rounded-2xl border border-slate-200 p-4">
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-3xl font-semibold">
@@ -107,9 +97,9 @@ export default function LiveMapPanel({
                 </p>
               </div>
 
-              <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+              <StatusBadge tone="danger">
                 Latest
-              </span>
+              </StatusBadge>
             </div>
 
             <p className="mt-4 text-sm font-medium leading-5 text-slate-800">
@@ -243,10 +233,11 @@ export default function LiveMapPanel({
             Layers
           </p>
 
-          <div className="mt-3 space-y-3">
+          <div className="mt-3 divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
             <LayerToggle
               label="Significant earthquakes"
               description={`${significantEarthquakes.length} events · M5.0+`}
+              colorClass="bg-red-500"
               checked={showSignificant}
               onChange={setShowSignificant}
             />
@@ -254,6 +245,7 @@ export default function LiveMapPanel({
             <LayerToggle
               label="Felt earthquakes"
               description={`${feltEarthquakes.length} recent events`}
+              colorClass="bg-orange-500"
               checked={showFelt}
               onChange={setShowFelt}
             />
@@ -261,6 +253,7 @@ export default function LiveMapPanel({
             <LayerToggle
               label="Latest earthquake"
               description={`M ${latest.magnitude}`}
+              colorClass="bg-blue-500"
               checked={showLatest}
               onChange={setShowLatest}
             />
@@ -268,78 +261,91 @@ export default function LiveMapPanel({
         </section>
 
         <section className="mt-8">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Legend
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Recent significant events
+            </p>
 
-          <div className="mt-3 space-y-2 text-xs text-slate-600">
-            <LegendItem
-              className="bg-red-500"
-              label="M5.0+ earthquake"
-            />
-
-            <LegendItem
-              className="bg-amber-500"
-              label="Felt earthquake"
-            />
-
-            <LegendItem
-              className="bg-blue-600 ring-4 ring-blue-100"
-              label="Latest earthquake"
-            />
+            {significantEarthquakes.length > 4 && (
+              <button
+                type="button"
+                onClick={() => setShowAllEvents((current) => !current)}
+                className="text-[11px] font-medium text-blue-600 hover:text-blue-700"
+              >
+                {showAllEvents ? "Show less" : "View more"}
+              </button>
+            )}
           </div>
-        </section>
 
-        <section className="mt-8">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Recent significant events
-          </p>
+          <div className="mt-3 divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
+            {recentEvents.map((earthquake) => {
+              const isSelected =
+                selectedEarthquake?.id === earthquake.id;
 
-          <div className="mt-3 space-y-3">
-            {significantEarthquakes.slice(0, 5).map((earthquake) => {
-                const isSelected =
-                    selectedEarthquake?.id === earthquake.id;
-
-                return (
-                    <button
-                    key={earthquake.id}
-                    type="button"
-                    onClick={() => {
-                        console.log("Sidebar selected:", earthquake);
-                        setSelectedEarthquake(earthquake);
-                    }}
-                    className={`w-full cursor-pointer rounded-xl border p-3 text-left transition ${
-                        isSelected
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-slate-200 hover:border-slate-400 hover:bg-slate-50"
-                    }`}
-                    >
-                    <div className="flex items-center justify-between">
-                        <p className="font-semibold">
-                        M {earthquake.magnitude}
-                        </p>
-
-                        <p className="text-xs text-slate-400">
-                        {earthquake.depthKm} km
-                        </p>
-                    </div>
-
-                    <p className="mt-2 text-xs leading-5 text-slate-600">
-                        {earthquake.region}
+              return (
+                <button
+                  key={earthquake.id}
+                  type="button"
+                  onClick={() =>
+                    setSelectedEarthquake(earthquake)
+                  }
+                  className={`w-full px-4 py-2.5 text-left transition ${
+                    isSelected
+                      ? "bg-blue-50"
+                      : "hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-900">
+                      M {earthquake.magnitude}
                     </p>
 
-                    <p className="mt-2 text-[11px] text-slate-400">
-                        {earthquake.date} · {earthquake.time}
-                    </p>
-                    </button>
-                );
+                    <span className="text-[10px] text-slate-400">
+                      {earthquake.depthKm} km
+                    </span>
+                  </div>
+
+                  <p className="mt-1 line-clamp-1 text-[11px] leading-4 text-slate-600">
+                    {earthquake.region}
+                  </p>
+
+                  <p className="mt-1 text-[10px] leading-4 text-slate-400">
+                    {earthquake.date} · {earthquake.time}
+                  </p>
+                </button>
+              );
             })}
           </div>
         </section>
 
-        <p className="mt-8 border-t border-slate-200 pt-4 text-[11px] leading-4 text-slate-400">
-          Earthquake data source: BMKG — Badan Meteorologi, Klimatologi,
-          dan Geofisika.
+        <section className="mt-8">
+          <div className="rounded-2xl bg-blue-50/70 p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-600">
+              Continue
+            </p>
+
+            <p className="mt-2 text-sm font-semibold text-slate-900">
+              Understand spatial risk in Padang
+            </p>
+
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              Move from current conditions to longer-term flood,
+              tsunami, landslide, and population exposure.
+            </p>
+
+            <Link
+              href="/risk"
+              className="mt-3 inline-flex items-center text-xs font-semibold text-blue-700 hover:text-blue-800"
+            >
+              Open Risk Intelligence →
+            </Link>
+          </div>
+        </section>
+
+        <p className="mt-6 border-t border-slate-100 pt-4 text-[10px] leading-4 text-slate-400">
+          Earthquake data: BMKG
+          <br />
+          Weather data: BMKG
         </p>
       </aside>
 
@@ -359,22 +365,30 @@ function LayerToggle({
   description,
   checked,
   onChange,
+  colorClass
 }: {
   label: string;
   description: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
+  colorClass: string;
 }) {
   return (
-    <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-200 p-3">
-      <div>
-        <p className="text-sm font-medium text-slate-800">
-          {label}
-        </p>
+    <label className="flex cursor-pointer items-center justify-between gap-4 px-4 py-2.5 transition hover:bg-slate-50">
+      <div className="flex items-start gap-3">
+        <span
+          className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${colorClass}`}
+        />
 
-        <p className="mt-1 text-xs text-slate-500">
-          {description}
-        </p>
+        <div>
+          <p className="text-sm font-medium text-slate-800">
+            {label}
+          </p>
+
+          <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
+            {description}
+          </p>
+        </div>
       </div>
 
       <input
@@ -384,21 +398,6 @@ function LayerToggle({
         className="mt-1 h-4 w-4"
       />
     </label>
-  );
-}
-
-function LegendItem({
-  className,
-  label,
-}: {
-  className: string;
-  label: string;
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className={`h-3 w-3 rounded-full ${className}`} />
-      <span>{label}</span>
-    </div>
   );
 }
 
@@ -442,7 +441,7 @@ function WeatherStat({
   value: string;
 }) {
   return (
-    <div className="rounded-lg bg-slate-50 p-2.5">
+    <div className="rounded-xl bg-slate-50 px-3 py-2.5">
       <p className="text-slate-400">
         {label}
       </p>

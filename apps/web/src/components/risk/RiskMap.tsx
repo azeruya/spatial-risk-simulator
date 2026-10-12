@@ -5,6 +5,7 @@ import Map, { Marker, Source, Layer } from "react-map-gl/maplibre";
 import { setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { circle } from "@turf/circle";
+import bbox from "@turf/bbox";
 
 import Link from "next/link";
 import { buildLocationUrl } from "@/lib/navigation";
@@ -71,6 +72,27 @@ type AreaHazards = Record<
 type HazardType = keyof SiteHazards;
 
 type AnalysisRadius = 250 | 500 | 1000;
+
+type RiskOverlay =
+  | "none"
+  | "flood"
+  | "tsunami"
+  | "landslide";
+
+const OVERLAY_STYLE = {
+  flood: {
+    label: "Flood",
+    tint: "#f59e0b",
+  },
+  tsunami: {
+    label: "Tsunami",
+    tint: "#06b6d4",
+  },
+  landslide: {
+    label: "Landslide",
+    tint: "#ef4444",
+  },
+} as const;
 
 type PopulationExposure = {
   status:
@@ -161,6 +183,9 @@ export default function RiskMap() {
       year: null,
     });
 
+  const [riskOverlay, setRiskOverlay] =
+    useState<RiskOverlay>("none");
+
   const analysisCircle = useMemo(() => {
     if (!selectedPoint) return null;
 
@@ -182,6 +207,56 @@ export default function RiskMap() {
 
     return Math.PI * radiusKm * radiusKm;
   }, [radius]);
+
+  const hazardOverlayBounds = useMemo(() => {
+    if (!analysisCircle) return null;
+
+    const [
+      west,
+      south,
+      east,
+      north,
+    ] = bbox(analysisCircle);
+
+    return {
+      west,
+      south,
+      east,
+      north,
+    };
+  }, [analysisCircle]);
+
+  const hazardOverlayUrl = useMemo(() => {
+    if (
+      riskOverlay === "none" ||
+      !hazardOverlayBounds
+    ) {
+      return null;
+    }
+
+    const {
+      west,
+      south,
+      east,
+      north,
+    } = hazardOverlayBounds;
+
+    const bboxValue = [
+      west,
+      south,
+      east,
+      north,
+    ].join(",");
+
+    return (
+      `/api/bnpb/hazard-overlay` +
+      `?hazard=${riskOverlay}` +
+      `&bbox=${encodeURIComponent(bboxValue)}`
+    );
+  }, [
+    riskOverlay,
+    hazardOverlayBounds,
+  ]);
 
   useEffect(() => {
     if (!analysisCircle) {
@@ -431,23 +506,23 @@ export default function RiskMap() {
 
   const hazardSummary =
     mappedHazardNames.length > 0
-      ? `${mappedHazardText} hazard data ${
+      ? `${mappedHazardText} ${
           mappedHazardNames.length === 1
-            ? "is"
-            : "are"
-        } present within the selected area.`
-      : "No mapped hazard samples were available within the selected area.";
+            ? "hazard is"
+            : "hazards are"
+        } mapped within the selected ${radiusLabel} surrounding context.`
+      : `No mapped flood, tsunami, or landslide values were returned within the selected ${radiusLabel} surrounding context.`;
 
   const keyConcern =
-  population !== null &&
-  population > 0 &&
-  mappedAreaHazards.length > 0
-    ? `Mapped hazard overlaps an area containing an estimated ${Math.round(
-        population
-      ).toLocaleString()} people within ${radiusLabel}.`
-    : mappedAreaHazards.length > 0
-      ? "Mapped hazard is present within the selected analysis area."
-      : "Insufficient mapped hazard data to identify a key concern.";
+    population !== null &&
+    population > 0 &&
+    mappedAreaHazards.length > 0
+      ? `The surrounding context includes an estimated ${Math.round(
+          population
+        ).toLocaleString()} people who may be relevant when considering development in this mapped hazard context.`
+      : mappedAreaHazards.length > 0
+        ? "Mapped hazard values are present around the selected site and should be considered before development."
+        : "Current mapped data does not identify a clear surrounding hazard concern for this site.";
 
   return (
     <div className="relative h-full w-full">
@@ -465,27 +540,88 @@ export default function RiskMap() {
         onClick={handleMapClick}
         cursor="crosshair"
       >
+        <div className="absolute right-4 top-4 z-20">
+          <div className="rounded-2xl border border-slate-200 bg-white/95 p-1 shadow-md backdrop-blur">
+            <div className="flex items-center gap-1">
+              {(["none", "flood", "tsunami", "landslide"] as const).map(
+                (overlay) => (
+                  <button
+                    key={overlay}
+                    type="button"
+                    onClick={() => setRiskOverlay(overlay)}
+                    className={`rounded-xl px-3 py-2 text-[11px] font-medium capitalize transition ${
+                      riskOverlay === overlay
+                        ? "bg-slate-900 text-white shadow-sm"
+                        : "text-slate-500 hover:bg-slate-100"
+                    }`}
+                  >
+                    {overlay === "none" ? "None" : overlay}
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+        </div>
+
+        {riskOverlay !== "none" &&
+          hazardOverlayUrl &&
+          hazardOverlayBounds && (
+            <Source
+              id="risk-hazard-overlay"
+              type="image"
+              url={hazardOverlayUrl}
+              coordinates={[
+                [
+                  hazardOverlayBounds.west,
+                  hazardOverlayBounds.north,
+                ],
+                [
+                  hazardOverlayBounds.east,
+                  hazardOverlayBounds.north,
+                ],
+                [
+                  hazardOverlayBounds.east,
+                  hazardOverlayBounds.south,
+                ],
+                [
+                  hazardOverlayBounds.west,
+                  hazardOverlayBounds.south,
+                ],
+              ]}
+            >
+              <Layer
+                id="risk-hazard-overlay-layer"
+                type="raster"
+                paint={{
+                  "raster-opacity": 0.42,
+                }}
+              />
+            </Source>
+          )}
+
         {analysisCircle && (
           <Source
-            id="analysis-area"
+            id="risk-analysis-context"
             type="geojson"
             data={analysisCircle}
           >
             <Layer
-              id="analysis-area-fill"
+              id="risk-analysis-context-fill"
               type="fill"
               paint={{
                 "fill-color": "#2563eb",
-                "fill-opacity": 0.08,
+                "fill-opacity": 0.035,
               }}
             />
 
             <Layer
-              id="analysis-area-outline"
+              id="risk-analysis-context-outline"
               type="line"
               paint={{
                 "line-color": "#2563eb",
                 "line-width": 2,
+                "line-opacity": 0.8,
+                "line-dasharray": [3, 2],
               }}
             />
           </Source>
@@ -499,6 +635,34 @@ export default function RiskMap() {
           >
             <div className="h-4 w-4 rounded-full border-2 border-white bg-blue-600 shadow-md ring-4 ring-blue-100" />
           </Marker>
+        )}
+
+        {riskOverlay !== "none" && (
+          <div className="absolute bottom-4 right-4 z-20 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
+            <div className="flex items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{
+                  backgroundColor:
+                    OVERLAY_STYLE[riskOverlay].tint,
+                }}
+              />
+
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-400">
+                  Hazard overlay
+                </p>
+
+                <p className="text-xs font-semibold text-slate-800">
+                  {OVERLAY_STYLE[riskOverlay].label}
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-1 text-[9px] text-slate-400">
+              BNPB InaRISK
+            </p>
+          </div>
         )}
       </Map>
 
@@ -546,12 +710,10 @@ export default function RiskMap() {
           <div className="mt-4">
             <div className="flex items-center justify-between">
               <p className="text-xs font-medium text-slate-600">
-                Analysis radius
+                Surrounding context
               </p>
 
-              <p className="text-[11px] text-slate-400">
-                Area context
-              </p>
+              
             </div>
 
             <div className="mt-2 grid grid-cols-3 gap-2">
@@ -581,57 +743,46 @@ export default function RiskMap() {
               Hazard assessment
             </p>
 
-            <div className="mt-2 space-y-3">
-              <div>
-                <HazardRow
-                  label="Flood · center point"
-                  hazard={hazards.flood}
-                />
+            <div className="mt-2 rounded-xl border border-slate-200 px-3">
+              <HazardAssessment
+                name="Flood"
+                point={hazards.flood}
+                area={areaHazards.flood}
+                radius={radius}
+              />
 
-                <HazardAreaSummary
-                  label="Flood"
-                  result={areaHazards.flood}
-                  radius={radius}
-                />
-              </div>
+              <HazardAssessment
+                name="Tsunami"
+                point={hazards.tsunami}
+                area={areaHazards.tsunami}
+                radius={radius}
+              />
 
-              <div>
-                <HazardRow
-                  label="Tsunami · center point"
-                  hazard={hazards.tsunami}
-                />
+              <HazardAssessment
+                name="Landslide"
+                point={hazards.landslide}
+                area={areaHazards.landslide}
+                radius={radius}
+              />
 
-                <HazardAreaSummary
-                  label="Tsunami"
-                  result={areaHazards.tsunami}
-                  radius={radius}
-                />
-              </div>
-
-              <div>
-                <HazardRow
-                  label="Landslide · center point"
-                  hazard={hazards.landslide}
-                />
-
-                <HazardAreaSummary
-                  label="Landslide"
-                  result={areaHazards.landslide}
-                  radius={radius}
-                />
-              </div>
-
-              <HazardRow
-                label="Earthquake · center point"
-                hazard={hazards.earthquake}
+              <HazardAssessment
+                name="Earthquake"
+                point={hazards.earthquake}
+                radius={radius}
               />
             </div>
           </div>
 
           <div className="mt-5 border-t border-slate-100 pt-4">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-              Exposure
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                Exposure
+              </p>
+
+              <span className="text-[10px] text-slate-400">
+                WorldPop 2025
+              </span>
+            </div>
 
             {populationExposure.status ===
               "loading" && (
@@ -683,10 +834,7 @@ export default function RiskMap() {
                   />
                 </div>
 
-                <p className="mt-3 text-[10px] text-slate-400">
-                  Estimated population · WorldPop{" "}
-                  {populationExposure.year}
-                </p>
+                
               </div>
             )}
 
@@ -972,7 +1120,7 @@ function HazardAreaSummary({
         </div>
 
         <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-blue-700">
-          {coveragePercent}% coverage
+          {coveragePercent}% data coverage
         </span>
       </div>
 
@@ -1229,6 +1377,100 @@ function AreaMetric({
       <p className="mt-1 text-sm font-semibold text-slate-800">
         {value}
       </p>
+    </div>
+  );
+}
+
+function HazardAssessment({
+  name,
+  point,
+  area,
+  radius,
+}: {
+  name: string;
+  point: HazardResult;
+  area?: HazardAreaResult;
+  radius: AnalysisRadius;
+}) {
+  const radiusLabel =
+    radius === 1000 ? "1 km" : `${radius} m`;
+
+  const areaMapped =
+    area?.status === "success" &&
+    area.hasData;
+
+  const pointMapped =
+    point.status === "success" &&
+    point.hasData;
+
+  const coverage =
+    area &&
+    area.totalSamples > 0
+      ? Math.round(
+          (area.validSamples / area.totalSamples) * 100
+        )
+      : null;
+
+  return (
+    <div className="border-b border-slate-100 py-4 last:border-0">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-slate-800">
+          {name}
+        </p>
+
+        <span
+          className={`rounded-full px-2 py-1 text-[10px] font-medium ${
+            pointMapped || areaMapped
+              ? "bg-blue-50 text-blue-700"
+              : "bg-slate-100 text-slate-500"
+          }`}
+        >
+          {pointMapped || areaMapped
+            ? "Mapped"
+            : "No mapped data"}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-4">
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-slate-400">
+            Point
+          </p>
+
+          <p className="mt-1 text-lg font-semibold text-slate-900">
+            {pointMapped && point.value !== null
+              ? point.value.toFixed(3)
+              : "—"}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-slate-400">
+            Within {radiusLabel}
+          </p>
+
+          {areaMapped ? (
+            <>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                Avg {area!.average?.toFixed(3)}
+              </p>
+
+              <p className="mt-1 text-[10px] text-slate-500">
+                Max {area!.maximum?.toFixed(3)}
+                {" · "}
+                {area!.validSamples}/{area!.totalSamples} mapped
+                {coverage !== null
+                  ? ` (${coverage}%)`
+                  : ""}
+              </p>
+            </>
+          ) : (
+            <p className="mt-1 text-sm text-slate-400">
+              —
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

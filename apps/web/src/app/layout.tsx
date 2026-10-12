@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Spatial Risk Platform",
+  title: "SIVORA",
   description: "Disaster-aware spatial intelligence and development simulation.",
 };
 

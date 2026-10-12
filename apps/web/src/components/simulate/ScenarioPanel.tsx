@@ -90,6 +90,7 @@ type ScenarioPanelProps = {
   onStartDrawing: () => void;
   onCancelDrawing: () => void;
   onClearDrawing: () => void;
+  siteImportedFromRisk: boolean;
 };
 
 export default function ScenarioPanel({
@@ -140,10 +141,31 @@ export default function ScenarioPanel({
   onStartDrawing,
   onCancelDrawing,
   onClearDrawing,
+  siteImportedFromRisk,
 }: ScenarioPanelProps) {
   console.log("bearing:", bearing);
   return (
     <aside className="overflow-y-auto border-r border-slate-200 bg-white p-5">
+      <div className="mb-6">
+        <p className="ui-section-label text-blue-600">
+          Simulate
+        </p>
+
+        <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">
+          Shape the site. See the impact.
+        </h1>
+
+        <p className="mt-1 text-xs leading-5 text-slate-500">
+          Define a development scenario and compare its spatial impact.
+        </p>
+
+        {siteImportedFromRisk && (
+          <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-medium text-blue-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+            Site imported from Risk Intelligence
+          </div>
+        )}
+      </div>
       <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
         Proposed scenario
       </p>

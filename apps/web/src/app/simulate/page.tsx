@@ -642,37 +642,6 @@ export default function SimulatePage() {
   return (
     <main className="h-[calc(100vh-73px)] bg-slate-50">
       <div className="flex h-full flex-col">
-        {/* Header */}
-        <div className="border-b border-slate-200 bg-white px-6 py-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
-            Scenario simulator
-          </p>
-
-          <div className="mt-1 flex items-end justify-between gap-6">
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-900">
-                Shape the site. See the impact.
-              </h1>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Explore how development choices may
-                change runoff, green space, and
-                population exposure.
-              </p>
-            </div>
-
-            <div className="hidden items-center gap-2 text-xs text-slate-400 md:flex">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Live scenario
-            </div>
-            {siteImportedFromRisk && (
-              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-[11px] font-medium text-blue-700">
-                Site imported from Risk Intelligence
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Workspace */}
         <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_360px]">
           <ScenarioPanel
@@ -766,6 +735,8 @@ export default function SimulatePage() {
               setIsDrawing(false);
               setDrawnFootprint(null);
             }}
+
+            siteImportedFromRisk={siteImportedFromRisk}
           />
 
           {/* Map */}
