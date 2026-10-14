@@ -10,7 +10,7 @@ import ScenarioPanel, { ScenarioType } from "@/components/simulate/ScenarioPanel
 import SimulationMap, { SelectedSite } from "@/components/simulate/SimulationMap";
 import ImpactPanel from "@/components/simulate/ImpactPanel";
 import type { AreaUnit, FootprintHazardAnalysis, FootprintHazards, FootprintMode, SimulationBaseline } from "@/types/simulation";
-import { areaToM2 } from "@/types/simulation";
+import { areaToM2, SimulationView } from "@/types/simulation";
 import { simulateDevelopment } from "@/lib/simulation";
 import { createRectangleFootprint } from "@/lib/geometry";
 import { buildPlanningAssessment } from "@/lib/planning-assessment";
@@ -26,10 +26,11 @@ type RetentionLevel =
   | "moderate"
   | "high";
 
-export type SimulationView =
-  | "current"
-  | "proposed"
-  | "mitigated";
+type HazardOverlay =
+  | "flood"
+  | "tsunami"
+  | "landslide"
+  | null;
 
 async function fetchFootprintHazard(
   endpoint: string,
@@ -100,6 +101,12 @@ export default function SimulatePage() {
   const [footprintMode, setFootprintMode] =
     useState<FootprintMode>("area");
 
+  const [leftPanelOpen, setLeftPanelOpen] =
+    useState(true);
+
+  const [rightPanelOpen, setRightPanelOpen] =
+    useState(true);
+
   const [areaValue, setAreaValue] =
     useState(0);
 
@@ -131,11 +138,25 @@ export default function SimulatePage() {
     setFootprintHazardsLoading,
   ] = useState(false);
 
+  const hazardMapped = {
+    flood:
+      (footprintHazards.flood?.validSamples ?? 0) > 0,
+
+    tsunami:
+      (footprintHazards.tsunami?.validSamples ?? 0) > 0,
+
+    landslide:
+      (footprintHazards.landslide?.validSamples ?? 0) > 0,
+  };
+
   const drawnAreaM2 = useMemo(() => {
     if (!drawnFootprint) return 0;
 
     return area(drawnFootprint);
   }, [drawnFootprint]);
+
+  const [hazardOverlay, setHazardOverlay] =
+    useState<HazardOverlay>(null);
 
   const projectAreaM2 =
     footprintMode === "dimensions"
@@ -641,192 +662,166 @@ export default function SimulatePage() {
 
   return (
     <main className="h-[calc(100vh-73px)] bg-slate-50">
-      <div className="flex h-full flex-col">
+      <div className="flex h-full min-h-0 w-full overflow-hidden">
         {/* Workspace */}
-        <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_360px]">
-          <ScenarioPanel
-            scenarioType={scenarioType}
-            setScenarioType={
-              setScenarioType
-            }
+        
+        <div
+          className={`
+            relative shrink-0 border-r border-slate-200 bg-white
+            transition-[width] duration-300 ease-out
+            ${leftPanelOpen ? "w-[340px]" : "w-10"}
+          `}
+        >
+          <div className="h-full overflow-y-auto">
+            {leftPanelOpen ? (
+              <ScenarioPanel
+                scenarioType={scenarioType}
+                setScenarioType={
+                  setScenarioType
+                }
 
-            projectAreaHa={
-              projectAreaHa
-            }
+                projectAreaHa={
+                  projectAreaHa
+                }
 
-            footprintMode={
-              footprintMode
-            }
-            setFootprintMode={
-              setFootprintMode
-            }
+                footprintMode={
+                  footprintMode
+                }
+                setFootprintMode={
+                  setFootprintMode
+                }
 
-            areaValue={areaValue}
-            setAreaValue={setAreaValue}
+                areaValue={areaValue}
+                setAreaValue={setAreaValue}
 
-            areaUnit={areaUnit}
-            setAreaUnit={setAreaUnit}
+                areaUnit={areaUnit}
+                setAreaUnit={setAreaUnit}
 
-            widthM={widthM}
-            setWidthM={setWidthM}
+                widthM={widthM}
+                setWidthM={setWidthM}
 
-            lengthM={lengthM}
-            setLengthM={setLengthM}
+                lengthM={lengthM}
+                setLengthM={setLengthM}
 
-            imperviousPercent={
-              imperviousPercent
-            }
-            setImperviousPercent={
-              setImperviousPercent
-            }
+                imperviousPercent={
+                  imperviousPercent
+                }
+                setImperviousPercent={
+                  setImperviousPercent
+                }
 
-            greenPercent={
-              greenPercent
-            }
-            setGreenPercent={
-              setGreenPercent
-            }
+                greenPercent={
+                  greenPercent
+                }
+                setGreenPercent={
+                  setGreenPercent
+                }
 
-            additionalPopulation={
-              additionalPopulation
-            }
-            setAdditionalPopulation={
-              setAdditionalPopulation
-            }
+                additionalPopulation={
+                  additionalPopulation
+                }
+                setAdditionalPopulation={
+                  setAdditionalPopulation
+                }
 
-            permeableSurfacePercent={
-              permeableSurfacePercent
-            }
-            setPermeableSurfacePercent={
-              setPermeableSurfacePercent
-            }
+                permeableSurfacePercent={
+                  permeableSurfacePercent
+                }
+                setPermeableSurfacePercent={
+                  setPermeableSurfacePercent
+                }
 
-            greenInfrastructurePercent={
-              greenInfrastructurePercent
-            }
-            setGreenInfrastructurePercent={
-              setGreenInfrastructurePercent
-            }
+                greenInfrastructurePercent={
+                  greenInfrastructurePercent
+                }
+                setGreenInfrastructurePercent={
+                  setGreenInfrastructurePercent
+                }
 
-            retentionLevel={
-              retentionLevel
-            }
-            setRetentionLevel={
-              setRetentionLevel
-            }
+                retentionLevel={
+                  retentionLevel
+                }
+                setRetentionLevel={
+                  setRetentionLevel
+                }
 
-            bearing = {bearing}
-            setBearing= {setBearing}
-            isDrawing={isDrawing}
-            hasDrawnFootprint={drawnFootprint !== null}
-            drawnAreaM2={drawnAreaM2}
+                bearing = {bearing}
+                setBearing= {setBearing}
+                isDrawing={isDrawing}
+                hasDrawnFootprint={drawnFootprint !== null}
+                drawnAreaM2={drawnAreaM2}
 
-            onStartDrawing={() => {
-              setDrawnFootprint(null);
-              setFootprintMode("draw");
-              setIsDrawing(true);
-            }}
+                onStartDrawing={() => {
+                  setDrawnFootprint(null);
+                  setFootprintMode("draw");
+                  setIsDrawing(true);
+                }}
 
-            onCancelDrawing={() => {
-              setIsDrawing(false);
-            }}
+                onCancelDrawing={() => {
+                  setIsDrawing(false);
+                }}
 
-            onClearDrawing={() => {
-              setIsDrawing(false);
-              setDrawnFootprint(null);
-            }}
+                onClearDrawing={() => {
+                  setIsDrawing(false);
+                  setDrawnFootprint(null);
+                }}
 
-            siteImportedFromRisk={siteImportedFromRisk}
-          />
-
-          {/* Map */}
-          <div className="relative min-w-0">
-            <SimulationMap
-              selectedSite={selectedSite}
-              onSelectSite={setSelectedSite}
-
-              projectAreaHa={projectAreaHa}
-
-              footprintMode={footprintMode}
-              widthM={widthM}
-              lengthM={lengthM}
-              bearing={bearing}
-
-              projectFootprint={projectFootprint}
-              setDrawnFootprint={setDrawnFootprint}
-
-              isDrawing={isDrawing}
-              setIsDrawing={setIsDrawing}
-
-              imperviousPercent={imperviousPercent}
-              greenPercent={greenPercent}
-
-              permeableSurfacePercent={
-                permeableSurfacePercent
-              }
-              greenInfrastructurePercent={
-                greenInfrastructurePercent
-              }
-              retentionLevel={retentionLevel}
-
-              simulationView={simulationView}
-              analysisCircle={analysisCircle}
-              scenarioRunoffPressure={
-                simulationResult.scenarioRunoffPressure
-              }
-              mitigatedRunoffPressure={
-                simulationResult.mitigatedRunoffPressure
-              }
-              mitigationReductionPercent={
-                simulationResult.mitigationReductionPercent
-              }
-            />
-            <div className="absolute left-1/2 top-5 z-10 -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-sm backdrop-blur">
-              <div className="flex gap-1">
-                {(
-                  ["current", "proposed", "mitigated"] as const
-                ).map((view) => {
-                  const isMitigated =
-                    view === "mitigated";
-
-                  const disabled =
-                    isMitigated &&
-                    !hasMitigation;
-
-                  return (
-                    <button
-                      key={view}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => {
-                        if (!disabled) {
-                          setSimulationView(view);
-                        }
-                      }}
-                      className={`rounded-lg px-3 py-2 text-xs font-medium capitalize transition ${
-                        simulationView === view
-                          ? "bg-slate-900 text-white"
-                          : disabled
-                            ? "cursor-not-allowed text-slate-300"
-                            : "text-slate-500 hover:bg-slate-100"
-                      }`}
-                    >
-                      {view}
-                    </button>
-                  );
-                })}
+                siteImportedFromRisk={siteImportedFromRisk}
+              />
+            ) : (
+              <div className="flex h-full items-start justify-center pt-16">
+                <span className="rotate-[-90deg] whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  Scenario
+                </span>
               </div>
-            </div>
+            )}
           </div>
+          
 
-          <ImpactPanel
+          <button
+            type="button"
+            onClick={() =>
+              setLeftPanelOpen((open) => !open)
+            }
+            className="
+              absolute right-[-14px] top-5 z-50
+              flex h-7 w-7 items-center justify-center
+              rounded-full border border-slate-200
+              bg-white text-sm text-slate-600
+              shadow-sm transition
+              hover:bg-slate-50
+            "
+            aria-label={
+              leftPanelOpen
+                ? "Collapse scenario panel"
+                : "Expand scenario panel"
+            }
+          >
+            {leftPanelOpen ? "‹" : "›"}
+          </button>
+        </div>
+
+        {/* Map */}
+        <div className="relative min-w-0 flex-1">
+          <SimulationMap
+            selectedSite={selectedSite}
+            onSelectSite={setSelectedSite}
+
             projectAreaHa={projectAreaHa}
+
+            footprintMode={footprintMode}
+            widthM={widthM}
+            lengthM={lengthM}
+            bearing={bearing}
+
+            projectFootprint={projectFootprint}
+            setDrawnFootprint={setDrawnFootprint}
+
+            isDrawing={isDrawing}
+            setIsDrawing={setIsDrawing}
+
             imperviousPercent={imperviousPercent}
             greenPercent={greenPercent}
-            additionalPopulation={additionalPopulation}
-
-            baseline={baseline}
-            simulation={simulationResult}
 
             permeableSurfacePercent={
               permeableSurfacePercent
@@ -836,21 +831,100 @@ export default function SimulatePage() {
             }
             retentionLevel={retentionLevel}
 
-            footprintHazards={footprintHazards}
-            footprintHazardsLoading={
-              footprintHazardsLoading
+            simulationView={simulationView}
+            setSimulationView={setSimulationView}
+            analysisCircle={analysisCircle}
+            scenarioRunoffPressure={
+              simulationResult.scenarioRunoffPressure
             }
-
-            assessment={planningAssessment}
-            hasValidFootprint={hasValidFootprint}
-            analysisReady={analysisReady}
-
-            analysisRadiusMeters={analysisRadiusMeters}
-            setAnalysisRadiusMeters={
-            setAnalysisRadiusMeters
-          }
+            mitigatedRunoffPressure={
+              simulationResult.mitigatedRunoffPressure
+            }
+            mitigationReductionPercent={
+              simulationResult.mitigationReductionPercent
+            }
+            baselineRunoffPressure={
+              simulationResult.baselineRunoffPressure
+            }
+            hazardMapped={hazardMapped}
+            hazardOverlay={hazardOverlay}
+            setHazardOverlay={setHazardOverlay}
+            layoutVersion={`${leftPanelOpen}-${rightPanelOpen}`}
           />
         </div>
+
+        <div
+          className={`
+            relative shrink-0 border-l border-slate-200 bg-white
+            transition-[width] duration-300 ease-out
+            ${rightPanelOpen ? "w-[380px]" : "w-12"}
+          `}
+        >
+          <div className="h-full overflow-y-auto">
+            {rightPanelOpen ? (    
+              <ImpactPanel
+                projectAreaHa={projectAreaHa}
+                imperviousPercent={imperviousPercent}
+                greenPercent={greenPercent}
+                additionalPopulation={additionalPopulation}
+
+                baseline={baseline}
+                simulation={simulationResult}
+
+                permeableSurfacePercent={
+                  permeableSurfacePercent
+                }
+                greenInfrastructurePercent={
+                  greenInfrastructurePercent
+                }
+                retentionLevel={retentionLevel}
+
+                footprintHazards={footprintHazards}
+                footprintHazardsLoading={
+                  footprintHazardsLoading
+                }
+
+                assessment={planningAssessment}
+                hasValidFootprint={hasValidFootprint}
+                analysisReady={analysisReady}
+
+                analysisRadiusMeters={analysisRadiusMeters}
+                setAnalysisRadiusMeters={
+                setAnalysisRadiusMeters
+              }
+              />
+            ) : (
+              <div className="flex h-full items-start justify-center pt-16">
+                <span className="rotate-90 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  Impact
+                </span>
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() =>
+              setRightPanelOpen((open) => !open)
+            }
+            className="
+              absolute left-[-14px] top-5 z-50
+              flex h-7 w-7 items-center justify-center
+              rounded-full border border-slate-200
+              bg-white text-sm text-slate-600
+              shadow-sm transition
+              hover:bg-slate-50
+            "
+            aria-label={
+              rightPanelOpen
+                ? "Collapse impact panel"
+                : "Expand impact panel"
+            }
+          >
+            {rightPanelOpen ? "›" : "‹"}
+          </button>
+        </div>
+
       </div>
     </main>
   );

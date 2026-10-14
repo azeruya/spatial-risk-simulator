@@ -32,35 +32,74 @@ export default function Navbar() {
   );
 
   return (
-    <header className="border-b border-slate-200 bg-white">
+    <header
+    className="
+        relative z-50
+        border-b border-slate-200/80
+        bg-white/95
+        shadow-[0_2px_10px_rgba(15,23,42,0.06)]
+        backdrop-blur-xl
+    "
+    >
       <div className="flex h-[72px] items-center justify-between px-6">
+
         {/* Brand */}
         <Link
           href="/"
-          className="flex items-center gap-3"
+          className="
+            group flex items-center gap-3
+            rounded-xl
+            transition
+          "
         >
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-sm">
+          <div
+            className="
+              flex h-10 w-10
+              items-center justify-center
+              rounded-xl
+              bg-blue-600
+              text-sm font-bold text-white
+              shadow-[0_4px_12px_rgba(37,99,235,0.28)]
+              transition-transform duration-200
+              group-hover:scale-[1.03]
+            "
+          >
             S
           </div>
 
-          <div>
-            <p className="text-sm font-semibold tracking-tight text-slate-900">
-              SIVORA
+          <div className="leading-tight">
+            <p className="text-[15px] font-semibold tracking-tight text-slate-950">
+            SIVORA
             </p>
 
-            <p className="text-[10px] text-slate-400">
-              Spatial intelligence platform
+            <p className="mt-0.5 text-[10px] font-medium text-slate-400">
+            Spatial intelligence platform
             </p>
           </div>
         </Link>
 
-        {/* Workflow navigation */}
-        <div className="relative rounded-xl bg-slate-100 p-1">
+        {/* Workflow */}
+        <div
+        className="
+            relative rounded-2xl
+            bg-slate-100/90
+            p-1.5
+        "
+        >
+          {/* Sliding active background */}
           <div
-            className="absolute bottom-1 top-1 rounded-lg bg-white shadow-sm transition-all duration-300 ease-out"
+            className="
+                absolute bottom-1.5 top-1.5
+                rounded-xl
+                border border-slate-200/70
+                bg-white
+                shadow-[0_2px_8px_rgba(15,23,42,0.08)]
+                transition-all duration-300
+                ease-[cubic-bezier(0.22,1,0.36,1)]
+                "
             style={{
-              width: `calc((100% - 8px) / 3)`,
-              left: `calc(4px + ${activeIndex} * ((100% - 8px) / 3))`,
+              width: `calc((100% - 12px) / 3)`,
+              left: `calc(6px + ${activeIndex} * ((100% - 12px) / 3))`,
             }}
           />
 
@@ -73,24 +112,40 @@ export default function Navbar() {
                 <Link
                   key={step.href}
                   href={step.href}
-                  className="min-w-[96px] rounded-lg px-4 py-2 text-center transition-colors"
+                  className="
+                    min-w-[104px]
+                    rounded-xl
+                    px-4 py-2
+                    text-center
+                    transition-colors
+                  "
                 >
                   <p
-                    className={`text-xs font-semibold ${
-                      active
-                        ? "text-slate-900"
-                        : "text-slate-500"
-                    }`}
+                    className={`
+                      text-xs font-semibold
+                      transition-colors duration-200
+                      ${
+                        active
+                          ? "text-slate-950"
+                          : "text-slate-400 hover:text-slate-600"
+                      }
+                    `}
                   >
                     {step.label}
                   </p>
 
                   <p
-                    className={`mt-0.5 text-[9px] ${
-                      active
-                        ? "text-blue-600"
-                        : "text-slate-400"
-                    }`}
+                    className={`
+                      mt-0.5
+                      text-[9px]
+                      font-medium
+                      transition-colors duration-200
+                      ${
+                        active
+                          ? "text-blue-600"
+                          : "text-slate-300"
+                      }
+                    `}
                   >
                     {step.subtitle}
                   </p>

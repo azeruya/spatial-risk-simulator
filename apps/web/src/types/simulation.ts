@@ -13,6 +13,11 @@ export type SimulationBaseline = {
   floodCoveragePercent: number | null;
 };
 
+export type SimulationView =
+  | "current"
+  | "proposed"
+  | "mitigated";
+
 export type FootprintMode =
   | "area"
   | "dimensions"

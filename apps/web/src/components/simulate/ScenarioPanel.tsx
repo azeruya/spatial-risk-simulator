@@ -145,7 +145,7 @@ export default function ScenarioPanel({
 }: ScenarioPanelProps) {
   console.log("bearing:", bearing);
   return (
-    <aside className="overflow-y-auto border-r border-slate-200 bg-white p-5">
+    <aside className="w-full border-r border-slate-200 bg-white p-5">
       <div className="mb-6">
         <p className="ui-section-label text-blue-600">
           Simulate

@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
-import Map, { Marker, Source, Layer } from "react-map-gl/maplibre";
+import { useMemo, useState, useEffect, useRef } from "react";
+import Map, { Marker, Source, Layer, MapRef } from "react-map-gl/maplibre";
 import { setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { circle } from "@turf/circle";
@@ -163,6 +163,8 @@ export default function RiskMap() {
     latitude: number;
   } | null>(null);
 
+  const hasSelectedPoint = selectedPoint !== null;
+
   const [hazards, setHazards] =
     useState<SiteHazards>(EMPTY_HAZARDS);
 
@@ -183,8 +185,13 @@ export default function RiskMap() {
       year: null,
     });
 
+  const mapRef = useRef<MapRef | null>(null);
+
   const [riskOverlay, setRiskOverlay] =
     useState<RiskOverlay>("none");
+
+  const [terrainEnabled, setTerrainEnabled] =
+    useState(false);
 
   const analysisCircle = useMemo(() => {
     if (!selectedPoint) return null;
@@ -409,6 +416,64 @@ export default function RiskMap() {
     };
   }, [analysisCircle, analysisAreaKm2]);
 
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+
+    if (!map) return;
+
+    const applyTerrain = () => {
+      // Add DEM source once
+      if (!map.getSource("terrain-dem")) {
+        map.addSource("terrain-dem", {
+          type: "raster-dem",
+          url: "https://tiles.mapterhorn.com/tilejson.json",
+          tileSize: 256,
+        });
+      }
+
+      if (terrainEnabled) {
+        map.setTerrain({
+          source: "terrain-dem",
+          exaggeration: 1.5,
+        });
+
+        map.easeTo({
+          pitch: 60,
+          bearing: -15,
+          duration: 700,
+        });
+      } else {
+        map.setTerrain(null);
+
+        map.easeTo({
+          pitch: 0,
+          bearing: 0,
+          duration: 700,
+        });
+      }
+    };
+
+    if (map.loaded()) {
+      applyTerrain();
+    } else {
+      map.once("load", applyTerrain);
+    }
+
+    return () => {
+      map.off("load", applyTerrain);
+    };
+  }, [terrainEnabled]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      mapRef.current?.resize();
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [hasSelectedPoint]);
+
   async function handleMapClick(event: {
     lngLat: {
       lng: number;
@@ -525,158 +590,159 @@ export default function RiskMap() {
         : "Current mapped data does not identify a clear surrounding hazard concern for this site.";
 
   return (
-    <div className="relative h-full w-full">
-      <Map
-        initialViewState={{
-          longitude: 100.3543,
-          latitude: -0.9471,
-          zoom: 10,
-        }}
-        style={{
-          width: "100%",
-          height: "100%",
-        }}
-        mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-        onClick={handleMapClick}
-        cursor="crosshair"
-      >
-        <div className="absolute right-4 top-4 z-20">
-          <div className="rounded-2xl border border-slate-200 bg-white/95 p-1 shadow-md backdrop-blur">
-            <div className="flex items-center gap-1">
-              {(["none", "flood", "tsunami", "landslide"] as const).map(
-                (overlay) => (
-                  <button
-                    key={overlay}
-                    type="button"
-                    onClick={() => setRiskOverlay(overlay)}
-                    className={`rounded-xl px-3 py-2 text-[11px] font-medium capitalize transition ${
-                      riskOverlay === overlay
-                        ? "bg-slate-900 text-white shadow-sm"
-                        : "text-slate-500 hover:bg-slate-100"
-                    }`}
-                  >
-                    {overlay === "none" ? "None" : overlay}
-                  </button>
-                )
-              )}
-            </div>
-          </div>
-        </div>
+    <div className="relative flex h-full overflow-hidden bg-slate-50">
 
-        {riskOverlay !== "none" &&
-          hazardOverlayUrl &&
-          hazardOverlayBounds && (
+      {/* =========================================================
+          MAP
+      ========================================================= */}
+      <div className="relative min-w-0 flex-1 transition-[width] duration-300 ease-out">
+        <Map
+          initialViewState={{
+            longitude: 100.3543,
+            latitude: -0.9471,
+            zoom: 10,
+          }}
+          style={{
+            width: "100%",
+            height: "100%",
+          }}
+          mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+          onClick={handleMapClick}
+          cursor="crosshair"
+          ref={mapRef}
+        >
+          <Source
+            id="hillshade-dem"
+            type="raster-dem"
+            url="https://tiles.mapterhorn.com/tilejson.json"
+            tileSize={256}
+          >
+            <Layer
+              id="terrain-hillshade"
+              type="hillshade"
+              layout={{
+                visibility:
+                  terrainEnabled ? "visible" : "none",
+              }}
+              paint={{
+                "hillshade-exaggeration": 0.25,
+              }}
+            />
+          </Source>
+
+          {riskOverlay !== "none" &&
+            hazardOverlayUrl &&
+            hazardOverlayBounds && (
+              <Source
+                id="risk-hazard-overlay"
+                type="image"
+                url={hazardOverlayUrl}
+                coordinates={[
+                  [
+                    hazardOverlayBounds.west,
+                    hazardOverlayBounds.north,
+                  ],
+                  [
+                    hazardOverlayBounds.east,
+                    hazardOverlayBounds.north,
+                  ],
+                  [
+                    hazardOverlayBounds.east,
+                    hazardOverlayBounds.south,
+                  ],
+                  [
+                    hazardOverlayBounds.west,
+                    hazardOverlayBounds.south,
+                  ],
+                ]}
+              >
+                <Layer
+                  id="risk-hazard-overlay-layer"
+                  type="raster"
+                  paint={{
+                    "raster-opacity": 0.42,
+                  }}
+                />
+              </Source>
+            )}
+
+          {analysisCircle && (
             <Source
-              id="risk-hazard-overlay"
-              type="image"
-              url={hazardOverlayUrl}
-              coordinates={[
-                [
-                  hazardOverlayBounds.west,
-                  hazardOverlayBounds.north,
-                ],
-                [
-                  hazardOverlayBounds.east,
-                  hazardOverlayBounds.north,
-                ],
-                [
-                  hazardOverlayBounds.east,
-                  hazardOverlayBounds.south,
-                ],
-                [
-                  hazardOverlayBounds.west,
-                  hazardOverlayBounds.south,
-                ],
-              ]}
+              id="risk-analysis-context"
+              type="geojson"
+              data={analysisCircle}
             >
               <Layer
-                id="risk-hazard-overlay-layer"
-                type="raster"
+                id="risk-analysis-context-fill"
+                type="fill"
                 paint={{
-                  "raster-opacity": 0.42,
+                  "fill-color": "#2563eb",
+                  "fill-opacity": 0.035,
+                }}
+              />
+
+              <Layer
+                id="risk-analysis-context-outline"
+                type="line"
+                paint={{
+                  "line-color": "#2563eb",
+                  "line-width": 2,
+                  "line-opacity": 0.8,
+                  "line-dasharray": [3, 2],
                 }}
               />
             </Source>
           )}
 
-        {analysisCircle && (
-          <Source
-            id="risk-analysis-context"
-            type="geojson"
-            data={analysisCircle}
-          >
-            <Layer
-              id="risk-analysis-context-fill"
-              type="fill"
-              paint={{
-                "fill-color": "#2563eb",
-                "fill-opacity": 0.035,
-              }}
+          {selectedPoint && (
+            <Marker
+              longitude={selectedPoint.longitude}
+              latitude={selectedPoint.latitude}
+              anchor="center"
+            >
+              <div className="h-4 w-4 rounded-full border-[3px] border-white bg-blue-600 shadow-lg ring-4 ring-blue-500/20" />
+            </Marker>
+          )}
+
+          {riskOverlay !== "none" && (
+            <HazardLegend
+              riskOverlay={riskOverlay}
             />
+          )}
+        </Map>
 
-            <Layer
-              id="risk-analysis-context-outline"
-              type="line"
-              paint={{
-                "line-color": "#2563eb",
-                "line-width": 2,
-                "line-opacity": 0.8,
-                "line-dasharray": [3, 2],
-              }}
-            />
-          </Source>
-        )}
+        <MapControls
+          terrainEnabled={terrainEnabled}
+          setTerrainEnabled={setTerrainEnabled}
+          riskOverlay={riskOverlay}
+          setRiskOverlay={setRiskOverlay}
+          hasSelectedSite={selectedPoint !== null}
+        />
 
-        {selectedPoint && (
-          <Marker
-            longitude={selectedPoint.longitude}
-            latitude={selectedPoint.latitude}
-            anchor="center"
+        {!selectedPoint && (
+          <div
+            className="
+              pointer-events-none
+              absolute left-1/2 top-4 z-20
+              -translate-x-1/2
+              rounded-xl border border-slate-200
+              bg-white/95 px-4 py-2
+              text-xs font-medium text-slate-600
+              shadow-sm backdrop-blur
+            "
           >
-            <div className="h-4 w-4 rounded-full border-2 border-white bg-blue-600 shadow-md ring-4 ring-blue-100" />
-          </Marker>
-        )}
-
-        {riskOverlay !== "none" && (
-          <div className="absolute bottom-4 right-4 z-20 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
-            <div className="flex items-center gap-2">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{
-                  backgroundColor:
-                    OVERLAY_STYLE[riskOverlay].tint,
-                }}
-              />
-
-              <div>
-                <p className="text-[10px] uppercase tracking-wide text-slate-400">
-                  Hazard overlay
-                </p>
-
-                <p className="text-xs font-semibold text-slate-800">
-                  {OVERLAY_STYLE[riskOverlay].label}
-                </p>
-              </div>
-            </div>
-
-            <p className="mt-1 text-[9px] text-slate-400">
-              BNPB InaRISK
-            </p>
+            Click anywhere on the map to analyse a site
           </div>
         )}
-      </Map>
+      </div>
 
-      {/* Instruction */}
-      {!selectedPoint && (
-        <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 px-4 py-2 text-sm text-slate-600 shadow-sm">
-          Click anywhere on the map to analyse hazards around a site
-        </div>
-      )}
-
-      {/* Site analysis */}
+      {/* =========================================================
+          ANALYSIS PANEL
+      ========================================================= */}
       {selectedPoint && (
-        <div className="absolute bottom-6 right-6 max-h-[calc(100vh-120px)] w-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-lg">
-          {/* Header */}
+        <aside className="risk-analysis-panel w-[350px] shrink-0 overflow-y-auto border-l border-slate-200 bg-white">
+          <div className="p-4">
+            {/* Header */}
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
               Site analysis
@@ -914,7 +980,9 @@ export default function RiskMap() {
             statistics summarize valid raster samples within the
             selected radius.
           </p>
-        </div>
+          </div>
+        </aside>
+
       )}
     </div>
   );
@@ -1471,6 +1539,143 @@ function HazardAssessment({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function MapControls({
+  terrainEnabled,
+  setTerrainEnabled,
+  riskOverlay,
+  setRiskOverlay,
+  hasSelectedSite,
+}: {
+  terrainEnabled: boolean;
+  setTerrainEnabled: (value: boolean) => void;
+  riskOverlay: RiskOverlay;
+  setRiskOverlay: (value: RiskOverlay) => void;
+  hasSelectedSite: boolean;
+}) {
+  return (
+    <div
+      className="
+        absolute right-4 top-4 z-30
+        w-[280px]
+        overflow-hidden rounded-2xl
+        border border-slate-200/80
+        bg-white/95 shadow-lg backdrop-blur-md
+        transition-all duration-200
+      "
+    >
+      {/* View */}
+      <div className="flex items-center justify-between px-3 py-2.5">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+          View
+        </p>
+
+        <div className="flex rounded-xl bg-slate-100 p-1">
+          <button
+            type="button"
+            onClick={() => setTerrainEnabled(false)}
+            className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition ${
+              !terrainEnabled
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            2D
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTerrainEnabled(true)}
+            className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition ${
+              terrainEnabled
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            3D
+          </button>
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div className="border-t border-slate-100" />
+
+      {/* Hazard overlay */}
+      <div className="px-3 py-2.5">
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+          Hazard overlay
+        </p>
+
+        <div className="grid grid-cols-4 rounded-xl bg-slate-100 p-1">
+          {(["none", "flood", "tsunami", "landslide"] as const).map(
+            (overlay) => (
+              <button
+                key={overlay}
+                type="button"
+                onClick={() => setRiskOverlay(overlay)}
+                className={`min-w-0 rounded-lg px-1.5 py-1.5 text-[10px] font-medium transition ${
+                  riskOverlay === overlay
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {overlay === "none"
+                  ? "None"
+                  : overlay === "landslide"
+                    ? "Landslide"
+                    : overlay[0].toUpperCase() + overlay.slice(1)}
+              </button>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HazardLegend({
+  riskOverlay,
+}: {
+  riskOverlay: Exclude<RiskOverlay, "none">;
+}) {
+  return (
+    <div
+      className="
+        absolute bottom-4 right-4 z-20
+        rounded-xl
+        border border-slate-200
+        bg-white/95
+        px-3 py-2
+        shadow-sm
+        backdrop-blur
+      "
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className="h-2.5 w-2.5 rounded-full"
+          style={{
+            backgroundColor:
+              OVERLAY_STYLE[riskOverlay].tint,
+          }}
+        />
+
+        <div>
+          <p className="text-[9px] font-medium uppercase tracking-wide text-slate-400">
+            Hazard overlay
+          </p>
+
+          <p className="text-xs font-semibold text-slate-800">
+            {OVERLAY_STYLE[riskOverlay].label}
+          </p>
+        </div>
+      </div>
+
+      <p className="mt-1 text-[9px] text-slate-400">
+        BNPB InaRISK
+      </p>
     </div>
   );
 }

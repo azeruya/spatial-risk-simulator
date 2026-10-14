@@ -19,6 +19,7 @@
     "@turf/circle": "^7.4.0",
     "@turf/difference": "^7.4.0",
     "@turf/helpers": "^7.4.0",
+    "@turf/intersect": "^7.4.0",
     "@turf/transform-rotate": "^7.4.0",
     "lucide-react": "^1.52.0",
     "maplibre-gl": "^6.12.0",

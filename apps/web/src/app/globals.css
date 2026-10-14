@@ -105,3 +105,19 @@ body {
 .maplibregl-popup-tip {
   border-top-color: white !important;
 }
+
+@keyframes risk-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.risk-analysis-panel {
+  animation: risk-panel-enter 220ms ease-out both;
+}

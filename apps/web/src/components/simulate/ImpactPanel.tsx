@@ -118,7 +118,7 @@ export default function ImpactPanel({
 
   if (!hasValidFootprint) {
     return (
-      <aside className="overflow-y-auto border-l border-slate-200 bg-white p-5">
+      <aside className="w-full border-l border-slate-200 bg-white p-5">
         {/* Header */}
         <div className="flex items-center justify-between gap-3">
           <div>
