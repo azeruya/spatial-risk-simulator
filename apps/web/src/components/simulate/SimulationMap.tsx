@@ -6,11 +6,10 @@ import Map, { Layer, Marker, Source, MapRef} from "react-map-gl/maplibre";
 import { setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import { SimulationView } from "@/types/simulation";
-import { FootprintMode } from "@/types/simulation";
+import { SimulationView, FootprintMode, DrawShape } from "@/types/simulation";
 import { createRectangleFootprint } from "@/lib/geometry";
 
-import { TerraDraw, TerraDrawPolygonMode } from "terra-draw";
+import { TerraDraw, TerraDrawPolygonMode, TerraDrawRectangleMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 import bbox from "@turf/bbox";
 import difference from "@turf/difference";
@@ -58,6 +57,9 @@ type SimulationMapProps = {
 
   isDrawing: boolean;
   setIsDrawing: (value: boolean) => void;
+  hasDefinedSite: boolean;
+
+  drawShape: DrawShape;
 
   imperviousPercent: number;
   greenPercent: number;
@@ -145,6 +147,8 @@ export default function SimulationMap({
 
   isDrawing,
   setIsDrawing,
+  drawShape,
+  hasDefinedSite,
 
   imperviousPercent,
   greenPercent,
@@ -197,7 +201,6 @@ export default function SimulationMap({
 
   const drawRef =
     useRef<TerraDraw | null>(null);
-
 
   const footprintVisual = useMemo(() => {
     switch (simulationView) {
@@ -488,7 +491,6 @@ export default function SimulationMap({
 
     if (!map) return;
 
-    // Prevent duplicate draw instances
     if (drawRef.current) {
       drawRef.current.stop();
       drawRef.current = null;
@@ -500,22 +502,33 @@ export default function SimulationMap({
       }),
 
       modes: [
-        new TerraDrawPolygonMode(),
+        new TerraDrawPolygonMode({
+          pointerDistance: 20,
+        }),
+
+        new TerraDrawRectangleMode(),
       ],
     });
 
     draw.start();
-    draw.setMode("polygon");
+
+    draw.setMode(
+      drawShape === "rectangle"
+        ? "rectangle"
+        : "polygon"
+    );
 
     drawRef.current = draw;
 
     const handleFinish = () => {
-      const features = draw.getSnapshot();
+      const features =
+        draw.getSnapshot();
 
       const polygon =
         features.find(
           (feature) =>
-            feature.geometry.type === "Polygon"
+            feature.geometry.type ===
+            "Polygon"
         );
 
       if (!polygon) return;
@@ -525,7 +538,6 @@ export default function SimulationMap({
       );
 
       setIsDrawing(false);
-
       draw.setMode("static");
     };
 
@@ -534,12 +546,15 @@ export default function SimulationMap({
     return () => {
       draw.stop();
 
-      if (drawRef.current === draw) {
+      if (
+        drawRef.current === draw
+      ) {
         drawRef.current = null;
       }
     };
   }, [
     isDrawing,
+    drawShape,
     setDrawnFootprint,
     setIsDrawing,
   ]);
@@ -852,23 +867,25 @@ export default function SimulationMap({
         )}
 
         <Source
-            id="hillshade-dem"
-            type="raster-dem"
-            url="https://tiles.mapterhorn.com/tilejson.json"
-            tileSize={256}
-          >
-            <Layer
-              id="terrain-hillshade"
-              type="hillshade"
-              layout={{
-                visibility:
-                  mapView ? "visible" : "none",
-              }}
-              paint={{
-                "hillshade-exaggeration": 0.25,
-              }}
-            />
-          </Source>
+          id="hillshade-dem"
+          type="raster-dem"
+          url="https://tiles.mapterhorn.com/tilejson.json"
+          tileSize={256}
+        >
+          <Layer
+            id="terrain-hillshade"
+            type="hillshade"
+            layout={{
+              visibility:
+                mapView === "terrain"
+                  ? "visible"
+                  : "none",
+            }}
+            paint={{
+              "hillshade-exaggeration": 0.25,
+            }}
+          />
+        </Source>
 
         {/* Hazard raster */}
         {hazardOverlayUrl &&
@@ -977,7 +994,7 @@ export default function SimulationMap({
               type="fill"
               paint={{
                 "fill-color": "#2563eb",
-                "fill-opacity": hazardOverlay ? 0.02 : 0,
+                "fill-opacity": mapView === "satellite" ? 0.06 : 0.035,
               }}
             />
 
@@ -986,12 +1003,9 @@ export default function SimulationMap({
               type="line"
               paint={{
                 "line-color": "#2563eb",
-                "line-width": hazardOverlay ? 2.5 : 1.5,
-                "line-opacity": hazardOverlay ? 0.85 : 0.28,
-                "line-dasharray": [
-                  2.5,
-                  1.5,
-                ],
+                "line-width": mapView === "satellite" ? 2.5 : 2,
+                "line-opacity": 0.9,
+                "line-dasharray": [3, 2],
               }}
             />
           </Source>
@@ -1005,15 +1019,28 @@ export default function SimulationMap({
             data={projectFootprint}
           >
             <Layer
-              id="project-footprint-fill"
-              type="fill"
-              paint={{
-                "fill-color":
-                  footprintVisual.fillColor,
-                "fill-opacity":
-                  footprintVisual.fillOpacity,
-              }}
-            />
+            id="project-footprint-fill"
+            type="fill"
+            paint={{
+              "fill-color":
+                simulationView === "mitigated"
+                  ? "#10b981"
+                  : "#2563eb",
+              "fill-opacity": 0.18,
+            }}
+          />
+
+          <Layer
+            id="project-footprint-outline"
+            type="line"
+            paint={{
+              "line-color":
+                simulationView === "mitigated"
+                  ? "#059669"
+                  : "#2563eb",
+              "line-width": 3,
+            }}
+          />
           </Source>
         )}
 
@@ -1151,9 +1178,13 @@ export default function SimulationMap({
 
 
       {/* Initial instruction */}
-      {!selectedSite && (
-        <div className="absolute left-1/2 top-5 -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 px-4 py-2 text-sm text-slate-600 shadow-sm">
-          Click the map to place the proposed development
+      {!hasDefinedSite && (
+        <div className="absolute left-1/2 top-5 z-10 -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 px-4 py-2 text-sm text-slate-600 shadow-sm">
+          {footprintMode === "draw"
+            ? "Draw the project boundary on the map"
+            : !selectedSite
+              ? "Click the map to place the proposed development"
+              : "Enter a project area to define the development footprint"}
         </div>
       )}
 
@@ -1186,7 +1217,11 @@ export default function SimulationMap({
         </p>
       </div>
 
-      {selectedSite && (
+      {(
+        simulationView === "current"
+          ? selectedSite !== null
+          : hasDefinedSite
+      ) && (
         <div className="absolute bottom-5 left-5 z-10 w-48 rounded-xl border border-white/40 bg-white/95 p-3 shadow-sm backdrop-blur">
           {simulationView === "current" && (
             <>
@@ -1204,7 +1239,7 @@ export default function SimulationMap({
             </>
           )}
 
-          {simulationView === "proposed" && (
+          {hasDefinedSite && simulationView == "proposed" && (
             <>
               <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-600">
                 Proposed development
@@ -1274,7 +1309,7 @@ export default function SimulationMap({
             </>
           )}
 
-          {simulationView === "mitigated" && (
+          {hasDefinedSite && simulationView === "mitigated" && (
             <>
               <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
                 Mitigated design

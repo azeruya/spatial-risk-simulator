@@ -1,6 +1,6 @@
 "use client";
 
-import { FootprintMode, AreaUnit } from "@/types/simulation";
+import { FootprintMode, AreaUnit, DrawShape } from "@/types/simulation";
 
 export type ScenarioType =
   | "new-development"
@@ -28,6 +28,9 @@ type ScenarioPanelProps = {
   setFootprintMode: (
     value: FootprintMode
   ) => void;
+
+  drawShape: DrawShape;
+  setDrawShape: (value: DrawShape) => void;
 
   // Area mode
   areaValue: number;
@@ -101,6 +104,8 @@ export default function ScenarioPanel({
 
   footprintMode,
   setFootprintMode,
+  drawShape,
+  setDrawShape,
 
   areaValue,
   setAreaValue,
@@ -474,7 +479,9 @@ export default function ScenarioPanel({
 
                 <p className="mt-1 text-[11px] leading-5 text-slate-500">
                   {isDrawing
-                    ? "Click points on the map to trace the proposed development. Close the polygon to finish."
+                    ? drawShape === "rectangle"
+                      ? "Click one corner, move to the opposite corner, then click again to finish."
+                      : "Click points around the site boundary and close the polygon to finish."
                     : hasDrawnFootprint
                       ? "The proposed footprint has been calculated from the boundary you drew."
                       : "Draw the proposed development footprint directly on the map. Site area will be calculated automatically."}
@@ -508,35 +515,117 @@ export default function ScenarioPanel({
 
             <div className="mt-3 flex gap-2">
               {isDrawing ? (
-                <button
-                  type="button"
-                  onClick={onCancelDrawing}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Cancel drawing
-                </button>
+  <div className="mt-4">
+    <button
+      type="button"
+      onClick={onCancelDrawing}
+      className="
+        w-full rounded-lg
+        border border-slate-200
+        bg-white px-3 py-2
+        text-xs font-medium text-slate-700
+        hover:bg-slate-50
+      "
+    >
+      Cancel drawing
+    </button>
+  </div>
               ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={onStartDrawing}
-                    className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700"
-                  >
-                    {hasDrawnFootprint
-                      ? "Redraw boundary"
-                      : "Start drawing"}
-                  </button>
+                <div className="mt-4 space-y-3">
+                  {/* Boundary type */}
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                      Boundary type
+                    </p>
 
-                  {hasDrawnFootprint && (
+                    <div className="mt-2 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+                      {(
+                        [
+                          {
+                            value: "rectangle",
+                            label: "Rectangle",
+                          },
+                          {
+                            value: "polygon",
+                            label: "Free draw",
+                          },
+                        ] as const
+                      ).map((option) => {
+                        const active =
+                          drawShape === option.value;
+
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() =>
+                              setDrawShape(
+                                option.value
+                              )
+                            }
+                            className={`
+                              rounded-lg px-3 py-2
+                              text-xs font-medium
+                              transition-all
+                              ${
+                                active
+                                  ? "bg-white text-slate-900 shadow-sm"
+                                  : "text-slate-500 hover:text-slate-800"
+                              }
+                            `}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Instructions */}
+                  <p className="text-[11px] leading-5 text-slate-500">
+                    {drawShape === "rectangle"
+                      ? "Click one corner of the site, move to the opposite corner, then click again to create a rectangular footprint."
+                      : "Click points around the development boundary, then close the shape to finish."}
+                  </p>
+
+                  {/* Actions */}
+                  <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={onClearDrawing}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                      onClick={onStartDrawing}
+                      className="
+                        flex-1 rounded-lg
+                        bg-blue-600 px-3 py-2
+                        text-xs font-medium text-white
+                        hover:bg-blue-700
+                      "
                     >
-                      Clear
+                      {hasDrawnFootprint
+                        ? drawShape === "rectangle"
+                          ? "Redraw rectangle"
+                          : "Redraw boundary"
+                        : drawShape === "rectangle"
+                          ? "Draw rectangle"
+                          : "Draw custom boundary"}
                     </button>
-                  )}
-                </>
+
+                    {hasDrawnFootprint && (
+                      <button
+                        type="button"
+                        onClick={onClearDrawing}
+                        className="
+                          rounded-lg
+                          border border-slate-200
+                          bg-white px-3 py-2
+                          text-xs font-medium text-slate-600
+                          hover:bg-slate-50
+                        "
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           </div>

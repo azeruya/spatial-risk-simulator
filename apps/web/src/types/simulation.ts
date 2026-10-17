@@ -23,6 +23,10 @@ export type FootprintMode =
   | "dimensions"
   | "draw";
 
+export type DrawShape =
+  | "rectangle"
+  | "polygon";
+  
 export type ProjectFootprint = {
   geometry: GeoJSON.Polygon;
   areaM2: number;

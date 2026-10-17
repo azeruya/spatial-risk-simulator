@@ -10,7 +10,7 @@ import ScenarioPanel, { ScenarioType } from "@/components/simulate/ScenarioPanel
 import SimulationMap, { SelectedSite } from "@/components/simulate/SimulationMap";
 import ImpactPanel from "@/components/simulate/ImpactPanel";
 import type { AreaUnit, FootprintHazardAnalysis, FootprintHazards, FootprintMode, SimulationBaseline } from "@/types/simulation";
-import { areaToM2, SimulationView } from "@/types/simulation";
+import { areaToM2, SimulationView, DrawShape } from "@/types/simulation";
 import { simulateDevelopment } from "@/lib/simulation";
 import { createRectangleFootprint } from "@/lib/geometry";
 import { buildPlanningAssessment } from "@/lib/planning-assessment";
@@ -133,6 +133,9 @@ export default function SimulatePage() {
       landslide: null,
     });
 
+  const [drawShape, setDrawShape] =
+    useState<DrawShape>("rectangle");
+
   const [
     footprintHazardsLoading,
     setFootprintHazardsLoading,
@@ -223,6 +226,10 @@ export default function SimulatePage() {
 
   const projectFootprint = useMemo(() => {
     if (footprintMode === "draw") {
+      if (!drawnFootprint || drawnAreaM2 <= 1) {
+        return null;
+      }
+
       return drawnFootprint;
     }
 
@@ -231,6 +238,10 @@ export default function SimulatePage() {
     }
 
     if (footprintMode === "dimensions") {
+      if (widthM <= 0 || lengthM <= 0) {
+        return null;
+      }
+
       return createRectangleFootprint(
         selectedSite.longitude,
         selectedSite.latitude,
@@ -240,8 +251,13 @@ export default function SimulatePage() {
       );
     }
 
+    // Area mode
+    if (projectAreaM2 <= 1) {
+      return null;
+    }
+
     const radiusMeters = Math.sqrt(
-      (projectAreaHa * 10_000) / Math.PI
+      projectAreaM2 / Math.PI
     );
 
     return circle(
@@ -258,12 +274,18 @@ export default function SimulatePage() {
   }, [
     footprintMode,
     drawnFootprint,
+    drawnAreaM2,
     selectedSite,
     widthM,
     lengthM,
     bearing,
-    projectAreaHa,
+    projectAreaM2,
   ]);
+
+  const hasDefinedSite =
+    projectFootprint !== null;
+
+  
 
   const analysisCenter = useMemo(() => {
       if (projectFootprint) {
@@ -597,6 +619,8 @@ export default function SimulatePage() {
           landslide: null,
         });
 
+        setFootprintHazardsLoading(false);
+
         return;
       }
 
@@ -690,6 +714,9 @@ export default function SimulatePage() {
                 setFootprintMode={
                   setFootprintMode
                 }
+
+                drawShape={drawShape}
+                setDrawShape={setDrawShape}
 
                 areaValue={areaValue}
                 setAreaValue={setAreaValue}
@@ -816,9 +843,11 @@ export default function SimulatePage() {
 
             projectFootprint={projectFootprint}
             setDrawnFootprint={setDrawnFootprint}
+            hasDefinedSite={hasDefinedSite}
 
             isDrawing={isDrawing}
             setIsDrawing={setIsDrawing}
+            drawShape={drawShape}
 
             imperviousPercent={imperviousPercent}
             greenPercent={greenPercent}

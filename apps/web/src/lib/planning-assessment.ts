@@ -298,7 +298,7 @@ export function buildPlanningAssessment({
     runoffChangePercent > 0
   ) {
     responses.push(
-      "Reduce impervious coverage where practical and preserve infiltration capacity."
+      "Reduce paved or sealed surfaces where practical and preserve infiltration capacity."
     );
 
     responses.push(
@@ -449,7 +449,7 @@ export function buildPlanningAssessment({
       "Increased runoff within flood-sensitive context";
 
     recommendedAction =
-      "Reduce impervious coverage and strengthen infiltration or retention measures.";
+      "Reduce paved or sealed surfaces and strengthen infiltration or retention measures.";
   }
 
   /*
@@ -515,7 +515,7 @@ export function buildPlanningAssessment({
       "Loss of infiltration capacity";
 
     recommendedAction =
-      "Reduce impervious coverage or introduce mitigation measures that improve infiltration and retention.";
+      "Reduce paved or sealed surfaces or introduce mitigation measures that improve infiltration and retention.";
   }
 
   return {
