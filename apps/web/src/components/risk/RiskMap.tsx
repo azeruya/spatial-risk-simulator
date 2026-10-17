@@ -7,77 +7,29 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { circle } from "@turf/circle";
 import bbox from "@turf/bbox";
 
-import Link from "next/link";
-import { buildLocationUrl } from "@/lib/navigation";
+import RiskMapControls from "./RiskMapControls";
+import RiskAnalysisPanel from "./RiskAnalysisPanel";
+
+import type {
+  SelectedPoint,
+  SiteHazards,
+  AreaHazards,
+  HazardResult,
+  HazardAreaResult,
+  HazardType,
+  HazardCategory,
+  AreaHazardType,
+  AnalysisRadius,
+  RiskOverlay,
+  PopulationExposure,
+} from "@/types/risk";
+
+import type {
+  TerrainAnalysis,
+} from "@/types/terrain";
+
 
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
-
-type HazardCategory =
-  | "low"
-  | "moderate"
-  | "high"
-  | "no-data";
-
-type HazardStatus =
-  | "idle"
-  | "loading"
-  | "success"
-  | "no-data"
-  | "error";
-
-type HazardResult = {
-  status: HazardStatus;
-  value: number | null;
-  category: HazardCategory;
-  hasData: boolean;
-  resolutionMeters: number | null;
-  source: string;
-  error?: string;
-};
-
-type SiteHazards = {
-  flood: HazardResult;
-  tsunami: HazardResult;
-  landslide: HazardResult;
-  earthquake: HazardResult;
-};
-
-type AreaHazardStatus =
-  | "idle"
-  | "loading"
-  | "success"
-  | "no-data"
-  | "error";
-
-type HazardAreaResult = {
-  status: AreaHazardStatus;
-  average: number | null;
-  maximum: number | null;
-  minimum: number | null;
-  validSamples: number;
-  totalSamples: number;
-  hasData: boolean;
-};
-
-type AreaHazardType =
-  | "flood"
-  | "tsunami"
-  | "landslide";
-
-type AreaHazards = Record<
-  AreaHazardType,
-  HazardAreaResult
->;
-
-type HazardType = keyof SiteHazards;
-
-type AnalysisRadius = 250 | 500 | 1000;
-
-type RiskOverlay =
-  | "none"
-  | "flood"
-  | "tsunami"
-  | "landslide";
 
 const OVERLAY_STYLE = {
   flood: {
@@ -93,19 +45,6 @@ const OVERLAY_STYLE = {
     tint: "#ef4444",
   },
 } as const;
-
-type PopulationExposure = {
-  status:
-    | "idle"
-    | "loading"
-    | "success"
-    | "error";
-
-  population: number | null;
-  areaKm2: number | null;
-  densityPerKm2: number | null;
-  year: number | null;
-};
 
 const createIdleHazard = (): HazardResult => ({
   status: "idle",
@@ -158,10 +97,8 @@ const AREA_HAZARD_ENDPOINTS: Record<
 };
 
 export default function RiskMap() {
-  const [selectedPoint, setSelectedPoint] = useState<{
-    longitude: number;
-    latitude: number;
-  } | null>(null);
+  const [selectedPoint, setSelectedPoint] =
+    useState<SelectedPoint | null>(null);
 
   const hasSelectedPoint = selectedPoint !== null;
 
@@ -185,13 +122,22 @@ export default function RiskMap() {
       year: null,
     });
 
+  const [terrainAnalysis, setTerrainAnalysis] =
+    useState<TerrainAnalysis | null>(null);
+
+  const [terrainLoading, setTerrainLoading] =
+    useState(false);
+
+  const [terrainError, setTerrainError] =
+    useState(false);
+
+  const [terrainEnabled, setTerrainEnabled] =
+    useState(false);
+
   const mapRef = useRef<MapRef | null>(null);
 
   const [riskOverlay, setRiskOverlay] =
     useState<RiskOverlay>("none");
-
-  const [terrainEnabled, setTerrainEnabled] =
-    useState(false);
 
   const analysisCircle = useMemo(() => {
     if (!selectedPoint) return null;
@@ -320,7 +266,7 @@ export default function RiskMap() {
             ...current,
             [type]: {
               ...createIdleAreaHazard(),
-              status: "error",
+              status: "unavailable",
             },
           }));
         });
@@ -417,6 +363,86 @@ export default function RiskMap() {
   }, [analysisCircle, analysisAreaKm2]);
 
   useEffect(() => {
+    if (!selectedPoint) {
+      setTerrainAnalysis(null);
+      setTerrainError(false);
+      return;
+    }
+
+    const point = selectedPoint;
+
+    const controller =
+      new AbortController();
+
+    async function loadTerrain() {
+      setTerrainLoading(true);
+      setTerrainError(false);
+
+      try {
+        const response = await fetch(
+          "/api/terrain/analyse",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              longitude:
+                point.longitude,
+
+              latitude:
+                point.latitude,
+
+              radiusMeters:
+                radius,
+            }),
+
+            signal:
+              controller.signal,
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            "Terrain analysis failed"
+          );
+        }
+
+        const data: TerrainAnalysis =
+          await response.json();
+
+        setTerrainAnalysis(data);
+      } catch (error) {
+        if (
+          error instanceof DOMException &&
+          error.name === "AbortError"
+        ) {
+          return;
+        }
+
+        console.error(
+          "Terrain analysis error:",
+          error
+        );
+
+        setTerrainAnalysis(null);
+        setTerrainError(true);
+      } finally {
+        setTerrainLoading(false);
+      }
+    }
+
+    loadTerrain();
+
+    return () => {
+      controller.abort();
+    };
+  }, [selectedPoint, radius]);
+
+  useEffect(() => {
     const map = mapRef.current?.getMap();
 
     if (!map) return;
@@ -474,7 +500,7 @@ export default function RiskMap() {
     };
   }, [hasSelectedPoint]);
 
-  async function handleMapClick(event: {
+  function handleMapClick(event: {
     lngLat: {
       lng: number;
       lat: number;
@@ -711,12 +737,11 @@ export default function RiskMap() {
           )}
         </Map>
 
-        <MapControls
+        <RiskMapControls
           terrainEnabled={terrainEnabled}
           setTerrainEnabled={setTerrainEnabled}
           riskOverlay={riskOverlay}
           setRiskOverlay={setRiskOverlay}
-          hasSelectedSite={selectedPoint !== null}
         />
 
         {!selectedPoint && (
@@ -740,249 +765,19 @@ export default function RiskMap() {
           ANALYSIS PANEL
       ========================================================= */}
       {selectedPoint && (
-        <aside className="risk-analysis-panel w-[350px] shrink-0 overflow-y-auto border-l border-slate-200 bg-white">
-          <div className="p-4">
-            {/* Header */}
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Site analysis
-            </p>
-
-            <p className="mt-1 text-sm font-medium text-slate-900">
-              Multi-hazard profile
-            </p>
-          </div>
-
-          {/* Location */}
-          <div className="mt-4">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-              Selected location
-            </p>
-
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <ResultStat
-                label="Longitude"
-                value={selectedPoint.longitude.toFixed(5)}
-              />
-
-              <ResultStat
-                label="Latitude"
-                value={selectedPoint.latitude.toFixed(5)}
-              />
-            </div>
-          </div>
-
-          {/* Radius */}
-          <div className="mt-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-slate-600">
-                Surrounding context
-              </p>
-
-              
-            </div>
-
-            <div className="mt-2 grid grid-cols-3 gap-2">
-              {[250, 500, 1000].map((value) => (
-                <button
-                  key={value}
-                  onClick={() =>
-                    setRadius(value as AnalysisRadius)
-                  }
-                  className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                    radius === value
-                      ? "border-blue-500 bg-blue-50 text-blue-700"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  {value === 1000
-                    ? "1 km"
-                    : `${value} m`}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Hazards */}
-          <div className="mt-5">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-              Hazard assessment
-            </p>
-
-            <div className="mt-2 rounded-xl border border-slate-200 px-3">
-              <HazardAssessment
-                name="Flood"
-                point={hazards.flood}
-                area={areaHazards.flood}
-                radius={radius}
-              />
-
-              <HazardAssessment
-                name="Tsunami"
-                point={hazards.tsunami}
-                area={areaHazards.tsunami}
-                radius={radius}
-              />
-
-              <HazardAssessment
-                name="Landslide"
-                point={hazards.landslide}
-                area={areaHazards.landslide}
-                radius={radius}
-              />
-
-              <HazardAssessment
-                name="Earthquake"
-                point={hazards.earthquake}
-                radius={radius}
-              />
-            </div>
-          </div>
-
-          <div className="mt-5 border-t border-slate-100 pt-4">
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                Exposure
-              </p>
-
-              <span className="text-[10px] text-slate-400">
-                WorldPop 2025
-              </span>
-            </div>
-
-            {populationExposure.status ===
-              "loading" && (
-              <div className="mt-2 rounded-xl border border-slate-200 p-3">
-                <p className="text-xs text-slate-500">
-                  Estimating population within the selected area...
-                </p>
-              </div>
-            )}
-
-            {populationExposure.status ===
-              "success" && (
-              <div className="mt-2 rounded-xl border border-slate-200 p-3">
-                <div className="grid grid-cols-3 gap-3">
-                  <AreaMetric
-                    label="Population"
-                    value={
-                      populationExposure.population !==
-                      null
-                        ? Math.round(
-                            populationExposure.population
-                          ).toLocaleString()
-                        : "—"
-                    }
-                  />
-
-                  <AreaMetric
-                    label="Density"
-                    value={
-                      populationExposure.densityPerKm2 !==
-                      null
-                        ? `${Math.round(
-                            populationExposure.densityPerKm2
-                          ).toLocaleString()}/km²`
-                        : "—"
-                    }
-                  />
-
-                  <AreaMetric
-                    label="Area"
-                    value={
-                      populationExposure.areaKm2 !==
-                      null
-                        ? `${populationExposure.areaKm2.toFixed(
-                            2
-                          )} km²`
-                        : "—"
-                    }
-                  />
-                </div>
-
-                
-              </div>
-            )}
-
-            {populationExposure.status ===
-              "error" && (
-              <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50 p-3">
-                <p className="text-xs text-amber-700">
-                  Population data temporarily unavailable.
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Site summary */}
-          <div className="mt-5 border-t border-slate-100 pt-4">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-              Site summary
-            </p>
-
-            <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                  Mapped hazard context
-                </p>
-
-                <p className="mt-1 text-xs leading-5 text-slate-700">
-                  {hazardSummary}
-                </p>
-              </div>
-
-              <div className="mt-3 border-t border-slate-200 pt-3">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                  Key concern
-                </p>
-
-                <p className="mt-1 text-xs font-medium leading-5 text-slate-800">
-                  {keyConcern}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Continue to simulation */}
-          <div className="mt-5 border-t border-slate-100 pt-4">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-              Next step
-            </p>
-
-            <div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/60 p-3">
-              <p className="text-xs font-semibold text-slate-800">
-                Test a development scenario
-              </p>
-
-              <p className="mt-1 text-[11px] leading-5 text-slate-500">
-                Continue with this exact location and explore
-                how a proposed development could change runoff,
-                green space, and population exposure.
-              </p>
-
-              <Link
-                href={buildLocationUrl(
-                  "/simulate",
-                  selectedPoint.latitude,
-                  selectedPoint.longitude
-                )}
-                className="mt-3 inline-flex w-full items-center justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-xs font-semibold text-white transition hover:bg-blue-700"
-              >
-                Simulate development here →
-              </Link>
-            </div>
-          </div>
-
-          {/* Source note */}
-          <p className="mt-4 border-t border-slate-100 pt-3 text-[10px] leading-4 text-slate-400">
-            Source: BNPB InaRISK. Center-point values represent
-            the raster cell at the selected location. Area
-            statistics summarize valid raster samples within the
-            selected radius.
-          </p>
-          </div>
-        </aside>
-
+        <RiskAnalysisPanel
+          selectedPoint={selectedPoint}
+          radius={radius}
+          setRadius={setRadius}
+          hazards={hazards}
+          areaHazards={areaHazards}
+          populationExposure={populationExposure}
+          terrainAnalysis={terrainAnalysis}
+          terrainLoading={terrainLoading}
+          terrainError={terrainError}
+          hazardSummary={hazardSummary}
+          keyConcern={keyConcern}
+        />
       )}
     </div>
   );
@@ -1035,189 +830,74 @@ async function fetchAreaHazard(
 
   const response = await fetch(endpoint, {
     method: "POST",
+
     headers: {
       "Content-Type": "application/json",
     },
+
     body: JSON.stringify({
       polygon,
-      sampleCount: 25,
+      sampleCount: 12,
     }),
+
     signal,
   });
 
   if (!response.ok) {
     throw new Error(
-      `${type} area hazard request failed: ${response.status}`
+      `${type} hazard request failed: ${response.status}`
     );
   }
 
   const data = await response.json();
 
+  const validSamples =
+    typeof data.validSamples === "number"
+      ? data.validSamples
+      : 0;
+
+  const totalSamples =
+    typeof data.totalSamples === "number"
+      ? data.totalSamples
+      : 0;
+
+  const average =
+    typeof data.average === "number"
+      ? data.average
+      : null;
+
+  const maximum =
+    typeof data.maximum === "number"
+      ? data.maximum
+      : null;
+
+  const minimum =
+    typeof data.minimum === "number"
+      ? data.minimum
+      : null;
+
   const hasData =
-    data.hasData === true &&
-    typeof data.average === "number";
+    validSamples > 0 &&
+    (
+      average !== null ||
+      maximum !== null ||
+      minimum !== null
+    );
 
   return {
     status: hasData
       ? "success"
       : "no-data",
 
-    average:
-      typeof data.average === "number"
-        ? data.average
-        : null,
+    average,
+    maximum,
+    minimum,
 
-    maximum:
-      typeof data.maximum === "number"
-        ? data.maximum
-        : null,
-
-    minimum:
-      typeof data.minimum === "number"
-        ? data.minimum
-        : null,
-
-    validSamples:
-      data.validSamples ?? 0,
-
-    totalSamples:
-      data.totalSamples ?? 0,
+    validSamples,
+    totalSamples,
 
     hasData,
   };
-}
-
-function HazardAreaSummary({
-  label,
-  result,
-  radius,
-}: {
-  label: string;
-  result: HazardAreaResult;
-  radius: AnalysisRadius;
-}) {
-  const radiusLabel =
-    radius === 1000
-      ? "1 km"
-      : `${radius} m`;
-
-  if (result.status === "idle") {
-    return null;
-  }
-
-  if (result.status === "loading") {
-    return (
-      <div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-blue-700">
-              {label} · area analysis
-            </p>
-
-            <p className="mt-0.5 text-[10px] text-slate-500">
-              Analysing raster samples within{" "}
-              {radiusLabel}
-            </p>
-          </div>
-
-          <span className="text-[10px] text-blue-600">
-            Checking...
-          </span>
-        </div>
-
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-blue-100">
-          <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-300" />
-        </div>
-      </div>
-    );
-  }
-
-  if (result.status === "error") {
-    return (
-      <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50 p-3">
-        <p className="text-xs font-medium text-slate-700">
-          {label} · area analysis
-        </p>
-
-        <p className="mt-1 text-[10px] text-amber-700">
-          Area data temporarily unavailable.
-        </p>
-      </div>
-    );
-  }
-
-  if (
-    result.status === "no-data" ||
-    !result.hasData
-  ) {
-    return (
-      <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <p className="text-xs font-medium text-slate-700">
-          {label} · area analysis
-        </p>
-
-        <p className="mt-1 text-[10px] text-slate-500">
-          No valid mapped samples within{" "}
-          {radiusLabel}.
-        </p>
-      </div>
-    );
-  }
-
-  const coveragePercent =
-    result.totalSamples > 0
-      ? Math.round(
-          (result.validSamples /
-            result.totalSamples) *
-            100
-        )
-      : 0;
-
-  return (
-    <div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/70 p-3">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-xs font-medium text-blue-700">
-            {label} · area analysis
-          </p>
-
-          <p className="mt-0.5 text-[10px] text-slate-500">
-            Valid raster samples within{" "}
-            {radiusLabel}
-          </p>
-        </div>
-
-        <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-blue-700">
-          {coveragePercent}% data coverage
-        </span>
-      </div>
-
-      <div className="mt-3 grid grid-cols-3 gap-3">
-        <AreaMetric
-          label="Avg. valid"
-          value={
-            result.average !== null
-              ? result.average.toFixed(3)
-              : "—"
-          }
-        />
-
-        <AreaMetric
-          label="Maximum"
-          value={
-            result.maximum !== null
-              ? result.maximum.toFixed(3)
-              : "—"
-          }
-        />
-
-        <AreaMetric
-          label="Valid cells"
-          value={`${result.validSamples}/${result.totalSamples}`}
-        />
-      </div>
-    </div>
-  );
 }
 
 function classifyHazard(
@@ -1236,164 +916,6 @@ function classifyHazard(
   }
 
   return "high";
-}
-
-function HazardRow({
-  label,
-  hazard,
-}: {
-  label: string;
-  hazard: HazardResult;
-  }) {
-    if (hazard.status === "loading") {
-      return (
-        <div className="rounded-xl border border-slate-200 p-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-800">
-              {label}
-            </p>
-
-            <span className="text-xs text-slate-400">
-              Checking...
-            </span>
-          </div>
-
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full w-1/2 animate-pulse rounded-full bg-slate-300" />
-          </div>
-        </div>
-      );
-    }
-
-    if (hazard.status === "error") {
-      return (
-        <div className="rounded-xl border border-amber-100 bg-amber-50 p-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-800">
-              {label}
-            </p>
-
-            <span className="text-xs text-amber-700">
-              Unavailable
-            </span>
-          </div>
-        </div>
-      );
-    }
-
-    if (hazard.status === "no-data") {
-      return (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-700">
-              {label}
-            </p>
-
-            <HazardBadge category="no-data" />
-          </div>
-
-          <p className="mt-1 text-xs text-slate-500">
-            No mapped value at this location.
-          </p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="rounded-xl border border-slate-200 p-3">
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-sm font-medium text-slate-800">
-            {label}
-          </p>
-
-          <HazardBadge
-            category={hazard.category}
-          />
-        </div>
-
-        <div className="mt-3 flex items-end justify-between">
-          <div>
-            <p className="text-2xl font-semibold text-slate-900">
-              {hazard.value?.toFixed(3)}
-            </p>
-
-            <p className="mt-1 text-[11px] text-slate-400">
-              Hazard index
-            </p>
-          </div>
-
-          {hazard.resolutionMeters && (
-            <p className="text-[11px] text-slate-400">
-              {hazard.resolutionMeters} m
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-
-function HazardBadge({
-  category,
-}: {
-  category: HazardCategory;
-}) {
-  const styles: Record<
-    HazardCategory,
-    string
-  > = {
-    low: "bg-emerald-50 text-emerald-700",
-    moderate: "bg-amber-50 text-amber-700",
-    high: "bg-red-50 text-red-700",
-    "no-data":
-      "bg-slate-100 text-slate-600",
-  };
-
-  return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-xs font-medium ${styles[category]}`}
-    >
-      {formatCategory(category)}
-    </span>
-  );
-}
-
-function ResultStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-lg bg-slate-50 p-2.5">
-      <p className="text-[11px] text-slate-400">
-        {label}
-      </p>
-
-      <p className="mt-1 text-xs font-medium text-slate-700">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function formatCategory(
-  category: HazardCategory
-) {
-  switch (category) {
-    case "low":
-      return "Low";
-
-    case "moderate":
-      return "Moderate";
-
-    case "high":
-      return "High";
-
-    default:
-      return "No data";
-  }
 }
 
 function formatHazardName(
@@ -1427,213 +949,6 @@ function formatHazardList(
   return `${hazards
     .slice(0, -1)
     .join(", ")}, and ${hazards.at(-1)}`;
-}
-
-function AreaMetric({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div>
-      <p className="text-[10px] text-slate-400">
-        {label}
-      </p>
-
-      <p className="mt-1 text-sm font-semibold text-slate-800">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function HazardAssessment({
-  name,
-  point,
-  area,
-  radius,
-}: {
-  name: string;
-  point: HazardResult;
-  area?: HazardAreaResult;
-  radius: AnalysisRadius;
-}) {
-  const radiusLabel =
-    radius === 1000 ? "1 km" : `${radius} m`;
-
-  const areaMapped =
-    area?.status === "success" &&
-    area.hasData;
-
-  const pointMapped =
-    point.status === "success" &&
-    point.hasData;
-
-  const coverage =
-    area &&
-    area.totalSamples > 0
-      ? Math.round(
-          (area.validSamples / area.totalSamples) * 100
-        )
-      : null;
-
-  return (
-    <div className="border-b border-slate-100 py-4 last:border-0">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-slate-800">
-          {name}
-        </p>
-
-        <span
-          className={`rounded-full px-2 py-1 text-[10px] font-medium ${
-            pointMapped || areaMapped
-              ? "bg-blue-50 text-blue-700"
-              : "bg-slate-100 text-slate-500"
-          }`}
-        >
-          {pointMapped || areaMapped
-            ? "Mapped"
-            : "No mapped data"}
-        </span>
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-4">
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-slate-400">
-            Point
-          </p>
-
-          <p className="mt-1 text-lg font-semibold text-slate-900">
-            {pointMapped && point.value !== null
-              ? point.value.toFixed(3)
-              : "—"}
-          </p>
-        </div>
-
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-slate-400">
-            Within {radiusLabel}
-          </p>
-
-          {areaMapped ? (
-            <>
-              <p className="mt-1 text-sm font-semibold text-slate-900">
-                Avg {area!.average?.toFixed(3)}
-              </p>
-
-              <p className="mt-1 text-[10px] text-slate-500">
-                Max {area!.maximum?.toFixed(3)}
-                {" · "}
-                {area!.validSamples}/{area!.totalSamples} mapped
-                {coverage !== null
-                  ? ` (${coverage}%)`
-                  : ""}
-              </p>
-            </>
-          ) : (
-            <p className="mt-1 text-sm text-slate-400">
-              —
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MapControls({
-  terrainEnabled,
-  setTerrainEnabled,
-  riskOverlay,
-  setRiskOverlay,
-  hasSelectedSite,
-}: {
-  terrainEnabled: boolean;
-  setTerrainEnabled: (value: boolean) => void;
-  riskOverlay: RiskOverlay;
-  setRiskOverlay: (value: RiskOverlay) => void;
-  hasSelectedSite: boolean;
-}) {
-  return (
-    <div
-      className="
-        absolute right-4 top-4 z-30
-        w-[280px]
-        overflow-hidden rounded-2xl
-        border border-slate-200/80
-        bg-white/95 shadow-lg backdrop-blur-md
-        transition-all duration-200
-      "
-    >
-      {/* View */}
-      <div className="flex items-center justify-between px-3 py-2.5">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-          View
-        </p>
-
-        <div className="flex rounded-xl bg-slate-100 p-1">
-          <button
-            type="button"
-            onClick={() => setTerrainEnabled(false)}
-            className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition ${
-              !terrainEnabled
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            2D
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setTerrainEnabled(true)}
-            className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition ${
-              terrainEnabled
-                ? "bg-slate-900 text-white shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            3D
-          </button>
-        </div>
-      </div>
-
-      {/* Divider */}
-      <div className="border-t border-slate-100" />
-
-      {/* Hazard overlay */}
-      <div className="px-3 py-2.5">
-        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-          Hazard overlay
-        </p>
-
-        <div className="grid grid-cols-4 rounded-xl bg-slate-100 p-1">
-          {(["none", "flood", "tsunami", "landslide"] as const).map(
-            (overlay) => (
-              <button
-                key={overlay}
-                type="button"
-                onClick={() => setRiskOverlay(overlay)}
-                className={`min-w-0 rounded-lg px-1.5 py-1.5 text-[10px] font-medium transition ${
-                  riskOverlay === overlay
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                {overlay === "none"
-                  ? "None"
-                  : overlay === "landslide"
-                    ? "Landslide"
-                    : overlay[0].toUpperCase() + overlay.slice(1)}
-              </button>
-            )
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function HazardLegend({
