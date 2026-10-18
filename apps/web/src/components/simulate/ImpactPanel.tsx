@@ -5,6 +5,8 @@ import { useState } from "react";
 import type { PlanningAssessment, SimulationBaseline } from "@/types/simulation";
 import type { SimulationResult } from "@/lib/simulation";
 import type { RetentionLevel } from "./ScenarioPanel";
+import type { TerrainAnalysis } from "@/types/terrain";
+import TerrainSummary from "../risk/TerrainSummary";
 
 type FootprintHazards = {
   flood: FootprintHazardAnalysis | null;
@@ -40,6 +42,16 @@ type ImpactPanelProps = {
         250 | 500 | 1000
       >
     >;
+
+  terrainAnalysis:
+    TerrainAnalysis | null;
+
+  terrainLoading: boolean;
+
+  terrainError: boolean;
+
+  terrainRadiusMeters:
+    number | null;
 };
 
 type FootprintHazardAnalysis = {
@@ -71,7 +83,12 @@ export default function ImpactPanel({
   hasValidFootprint,
   analysisReady,
   analysisRadiusMeters,
-  setAnalysisRadiusMeters
+  setAnalysisRadiusMeters,
+
+  terrainAnalysis,
+  terrainError,
+  terrainLoading,
+  terrainRadiusMeters
 }: ImpactPanelProps) {
   const [showRunoffInfo, setShowRunoffInfo] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
@@ -308,6 +325,35 @@ export default function ImpactPanel({
         hazards={footprintHazards}
         loading={footprintHazardsLoading}
       />
+
+      {/* ============================================================
+          terrain/elevation 
+      ============================================================ */}
+
+      <section className="border-t border-slate-100 pt-5">
+        <div className="mb-3 flex items-start justify-between">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Terrain context
+            </p>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Elevation and slope around
+              the proposed footprint.
+            </p>
+          </div>
+
+          <span className="text-[9px] text-slate-400">
+            Copernicus DEM
+          </span>
+        </div>
+
+        <TerrainSummary
+          terrain={terrainAnalysis}
+          loading={terrainLoading}
+          error={terrainError}
+        />
+      </section>
 
       {/* ============================================================
           2. WHY THIS MATTERS
@@ -904,6 +950,8 @@ export default function ImpactPanel({
           </div>
         )}
       </section>
+
+
 
       {/* ============================================================
           7. PLANNING RESPONSE

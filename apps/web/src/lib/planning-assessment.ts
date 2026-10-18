@@ -4,6 +4,14 @@ import type {
   PlanningAssessment,
 } from "@/types/simulation";
 
+import type {
+  TerrainAnalysis,
+} from "@/types/terrain";
+
+import {
+  buildTerrainContext,
+} from "@/lib/planning/terrain-context";
+
 type PlanningAssessmentInput = {
   projectAreaM2: number;
 
@@ -19,6 +27,8 @@ type PlanningAssessmentInput = {
   mitigationReductionPercent: number;
 
   hazards: FootprintHazards;
+
+  terrain: TerrainAnalysis | null;
 };
 
 function hasMappedHazard(
@@ -60,6 +70,7 @@ export function buildPlanningAssessment({
   mitigationReductionPercent,
 
   hazards,
+  terrain,
 }: PlanningAssessmentInput): PlanningAssessment {
   const floodPresent =
     hasMappedHazard(hazards.flood);
@@ -83,6 +94,19 @@ export function buildPlanningAssessment({
   const greenChange =
     greenPercent -
     baselineGreenPercent;
+
+  const terrainContext =
+    buildTerrainContext(terrain);
+
+  const {
+    available: terrainAvailable,
+    lowLying,
+    veryLowLying,
+    flat: flatTerrain,
+    sloping: slopingTerrain,
+    steep: steepTerrain,
+    highRelief,
+  } = terrainContext;
 
   /*
    * --------------------------------
@@ -165,6 +189,26 @@ export function buildPlanningAssessment({
     );
   }
 
+  if (terrainAvailable && terrain) {
+    hazard.push(
+      `The proposed site has a mean elevation of ${Math.round(
+        terrain.elevation.mean
+      )} m and a mean slope of ${terrain.slope.mean.toFixed(
+        1
+      )}°.`
+    );
+
+    evidence.push(
+      `Terrain elevation ranges from ${Math.round(
+        terrain.elevation.min
+      )} m to ${Math.round(
+        terrain.elevation.max
+      )} m, with ${Math.round(
+        terrain.relief
+      )} m of local relief.`
+    );
+  }
+
   /*
    * ==========================================================
    * CHANGE
@@ -243,6 +287,25 @@ export function buildPlanningAssessment({
   }
 
   if (
+    floodPresent &&
+    lowLying
+  ) {
+    consequence.push(
+      "Flood-hazard values occur within a relatively low-elevation site, increasing the importance of drainage pathways, runoff storage, and finished-floor elevation."
+    );
+  }
+
+  if (
+    floodPresent &&
+    lowLying &&
+    flatTerrain
+  ) {
+    consequence.push(
+      "The low and relatively flat terrain may limit natural drainage gradients, so surface-water management should be reviewed carefully."
+    );
+  }
+
+  if (
     tsunamiPresent &&
     additionalPopulation > 0
   ) {
@@ -257,9 +320,45 @@ export function buildPlanningAssessment({
     );
   }
 
+  if (
+    tsunamiPresent &&
+    veryLowLying
+  ) {
+    consequence.push(
+      "The proposed site is very low-lying within a mapped tsunami context, which increases the importance of evacuation access and vertical refuge planning."
+    );
+  }
+
   if (landslidePresent) {
     consequence.push(
       "Development within mapped landslide-hazard context may require closer review of slope stability, drainage direction, and ground conditions."
+    );
+  }
+
+  if (
+    landslidePresent &&
+    slopingTerrain
+  ) {
+    consequence.push(
+      "Mapped landslide hazard coincides with sloping terrain, strengthening the need for slope-stability and drainage review."
+    );
+  }
+
+  if (
+    landslidePresent &&
+    steepTerrain
+  ) {
+    consequence.push(
+      "The site includes steep terrain within a mapped landslide context, which may increase sensitivity to cut-and-fill, drainage concentration, and slope disturbance."
+    );
+  }
+
+  if (
+    landslidePresent &&
+    highRelief
+  ) {
+    consequence.push(
+      "Substantial elevation variation within the surrounding terrain suggests that local drainage direction and slope transitions should be reviewed before detailed design."
     );
   }
 
@@ -306,9 +405,27 @@ export function buildPlanningAssessment({
     );
   }
 
+  if (
+    floodPresent &&
+    lowLying
+  ) {
+    responses.push(
+      "Review finished-floor elevation, drainage outfalls, and temporary runoff storage relative to the surrounding terrain."
+    );
+  }
+
   if (tsunamiPresent) {
     responses.push(
       "Review site placement, evacuation access, vertical evacuation options, and the suitability of the proposed occupancy for the mapped tsunami context."
+    );
+  }
+
+  if (
+    tsunamiPresent &&
+    lowLying
+  ) {
+    responses.push(
+      "Prioritize evacuation-route continuity and assess access to higher ground or vertical evacuation structures."
     );
   }
 
@@ -323,6 +440,24 @@ export function buildPlanningAssessment({
   }
 
   if (
+    landslidePresent &&
+    slopingTerrain
+  ) {
+    responses.push(
+      "Minimize unnecessary cut-and-fill and avoid directing concentrated runoff toward steeper terrain."
+    );
+  }
+
+  if (
+    landslidePresent &&
+    steepTerrain
+  ) {
+    responses.push(
+      "Require site-specific geotechnical review before finalizing grading or foundation design."
+    );
+  }
+
+  if (
     mappedHazardCount === 0 &&
     runoffChangePercent <= 0
   ) {
@@ -332,14 +467,13 @@ export function buildPlanningAssessment({
   }
 
   /*
-   * ==========================================================
-   * PRIMARY ASSESSMENT
-   * The compact answer shown at the top of ImpactPanel
-   * ==========================================================
-   */
+  * ==========================================================
+  * PRIMARY ASSESSMENT
+  * Prioritize compound site conditions, then individual hazards
+  * ==========================================================
+  */
 
-  let status: PlanningAssessment["status"] =
-    "low";
+  let status: PlanningAssessment["status"] = "low";
 
   let headline =
     "No major mapped hazard signal identified";
@@ -356,14 +490,178 @@ export function buildPlanningAssessment({
     "Review the proposed land allocation and maintain adequate green and permeable surface.";
 
   /*
-   * Multiple hazards
-   */
+  * ----------------------------------------------------------
+  * 1. LANDSLIDE + STEEP TERRAIN
+  * Strong spatial interaction: mapped hazard + terrain evidence
+  * ----------------------------------------------------------
+  */
 
-  if (mappedHazardCount >= 2) {
+  if (
+    landslidePresent &&
+    steepTerrain &&
+    terrain
+  ) {
     status = "review";
 
     headline =
-      "Multiple hazards affect the proposed site";
+      floodPresent || tsunamiPresent
+        ? "Steep terrain strengthens landslide sensitivity within a multi-hazard site"
+        : "Mapped landslide exposure coincides with steep terrain";
+
+    summary =
+      `The ${formatArea(
+        projectAreaM2
+      )} footprint contains mapped landslide-hazard values on terrain with a mean slope of ${terrain.slope.mean.toFixed(
+        1
+      )}° and a maximum sampled slope of ${terrain.slope.max.toFixed(
+        1
+      )}°. ${
+        mappedHazardCount > 1
+          ? "Other mapped hazards are also present and require separate planning responses."
+          : ""
+      }`;
+
+    primaryConcern =
+      "Slope stability, grading, and concentrated drainage";
+
+    recommendedAction =
+      "Limit unnecessary cut-and-fill, control concentrated runoff, and undertake site-specific geotechnical assessment before detailed design.";
+  }
+
+  /*
+  * ----------------------------------------------------------
+  * 2. TSUNAMI + VERY LOW / LOW TERRAIN
+  * ----------------------------------------------------------
+  */
+
+  else if (
+    tsunamiPresent &&
+    veryLowLying &&
+    terrain
+  ) {
+    status = "review";
+
+    headline =
+      "Low-lying tsunami-exposed site requires evacuation review";
+
+    summary =
+      `Mapped tsunami-hazard values are present within the ${formatArea(
+        projectAreaM2
+      )} footprint, which has a mean elevation of approximately ${Math.round(
+        terrain.elevation.mean
+      )} m.${
+        floodPresent
+          ? " Mapped flood-hazard values are also present."
+          : ""
+      }`;
+
+    primaryConcern =
+      "Low elevation and evacuation exposure";
+
+    recommendedAction =
+      "Review site suitability, evacuation-route continuity, access to higher ground, and vertical evacuation options.";
+  }
+
+  /*
+  * ----------------------------------------------------------
+  * 3. FLOOD + LOW/FLAT TERRAIN + RUNOFF INCREASE
+  * ----------------------------------------------------------
+  */
+
+  else if (
+    floodPresent &&
+    runoffChangePercent > 10 &&
+    lowLying &&
+    flatTerrain &&
+    terrain
+  ) {
+    status = "attention";
+
+    headline =
+      "Development may amplify runoff on a low-lying flood-sensitive site";
+
+    summary =
+      `The proposed design increases comparative runoff pressure by ${runoffChangePercent.toFixed(
+        1
+      )}%. Mapped flood-hazard values are present while the site has a mean elevation of approximately ${Math.round(
+        terrain.elevation.mean
+      )} m and a mean slope of ${terrain.slope.mean.toFixed(
+        1
+      )}°.`;
+
+    primaryConcern =
+      "Runoff increase on low, flat terrain";
+
+    recommendedAction =
+      "Reduce paved surfaces, preserve infiltration capacity, and review drainage gradients, finished-floor elevation, and on-site retention.";
+  }
+
+  /*
+  * ----------------------------------------------------------
+  * 4. FLOOD + LANDSLIDE ON SLOPING TERRAIN
+  * ----------------------------------------------------------
+  */
+
+  else if (
+    floodPresent &&
+    landslidePresent &&
+    slopingTerrain &&
+    terrain
+  ) {
+    status = "review";
+
+    headline =
+      "Runoff and slope stability require coordinated review";
+
+    summary =
+      `Mapped flood and landslide hazards occur within the ${formatArea(
+        projectAreaM2
+      )} footprint. The surrounding terrain has a mean slope of ${terrain.slope.mean.toFixed(
+        1
+      )}°, so drainage changes and slope stability should be considered together.`;
+
+    primaryConcern =
+      "Runoff concentration and slope stability";
+
+    recommendedAction =
+      "Control runoff pathways, minimize unnecessary grading, and review geotechnical and drainage conditions together.";
+  }
+
+  /*
+  * ----------------------------------------------------------
+  * 5. FLOOD + TSUNAMI
+  * ----------------------------------------------------------
+  */
+
+  else if (
+    floodPresent &&
+    tsunamiPresent
+  ) {
+    status = "review";
+
+    headline =
+      "Flood-sensitive development with tsunami exposure";
+
+    primaryConcern =
+      "Stormwater management and evacuation exposure";
+
+    recommendedAction =
+      "Reduce development-induced runoff while separately reviewing evacuation access and site suitability for tsunami exposure.";
+
+    summary =
+      `The ${formatArea(
+        projectAreaM2
+      )} proposed footprint contains mapped flood and tsunami hazard values. Stormwater and tsunami exposure require different planning responses.`;
+  }
+
+  /*
+  * ----------------------------------------------------------
+  * 6. GENERIC MULTI-HAZARD
+  * ----------------------------------------------------------
+  */
+
+  else if (mappedHazardCount >= 2) {
+    status = "review";
 
     const hazardNames = [
       floodPresent && "flood",
@@ -371,43 +669,28 @@ export function buildPlanningAssessment({
       landslidePresent && "landslide",
     ].filter(Boolean);
 
+    headline =
+      "Multiple hazards affect the proposed site";
+
     summary =
       `The ${formatArea(
         projectAreaM2
       )} proposed footprint contains mapped ${hazardNames.join(
         " and "
-      )} hazard values. These hazards require different planning responses and should not be treated as a single risk.`;
+      )} hazard values. These conditions require separate hazard-specific planning responses.`;
 
-    if (
-      floodPresent &&
-      tsunamiPresent
-    ) {
-      primaryConcern =
-        "Flood-sensitive development and tsunami exposure";
+    primaryConcern =
+      "Multiple mapped hazard conditions";
 
-      recommendedAction =
-        "Reduce development-induced runoff while separately reviewing evacuation access and site suitability for tsunami exposure.";
-    } else if (
-      floodPresent &&
-      landslidePresent
-    ) {
-      primaryConcern =
-        "Runoff-sensitive development and slope stability";
-
-      recommendedAction =
-        "Control runoff and drainage while reviewing slope stability and geotechnical conditions.";
-    } else {
-      primaryConcern =
-        "Multiple mapped hazard conditions";
-
-      recommendedAction =
-        "Review each mapped hazard separately and apply hazard-specific planning controls.";
-    }
+    recommendedAction =
+      "Review each mapped hazard separately and apply hazard-specific planning controls.";
   }
 
   /*
-   * Tsunami only
-   */
+  * ----------------------------------------------------------
+  * 7. TSUNAMI ONLY
+  * ----------------------------------------------------------
+  */
 
   else if (tsunamiPresent) {
     status = "review";
@@ -428,8 +711,10 @@ export function buildPlanningAssessment({
   }
 
   /*
-   * Flood + substantial runoff increase
-   */
+  * ----------------------------------------------------------
+  * 8. FLOOD + RUNOFF INCREASE
+  * ----------------------------------------------------------
+  */
 
   else if (
     floodPresent &&
@@ -441,7 +726,7 @@ export function buildPlanningAssessment({
       "Development may amplify runoff in a mapped flood-hazard area";
 
     summary =
-      `The proposed design increases relative runoff pressure by ${runoffChangePercent.toFixed(
+      `The proposed design increases comparative runoff pressure by ${runoffChangePercent.toFixed(
         1
       )}% while mapped flood-hazard values are already present within the footprint.`;
 
@@ -453,30 +738,10 @@ export function buildPlanningAssessment({
   }
 
   /*
-   * Flood only
-   */
-
-  else if (floodPresent) {
-    status = "attention";
-
-    headline =
-      "Mapped flood hazard is present within the proposed footprint";
-
-    summary =
-      `Flood-hazard values are present within the ${formatArea(
-        projectAreaM2
-      )} proposed footprint.`;
-
-    primaryConcern =
-      "Stormwater and drainage performance";
-
-    recommendedAction =
-      "Preserve infiltration capacity and review site drainage before detailed planning.";
-  }
-
-  /*
-   * Landslide only
-   */
+  * ----------------------------------------------------------
+  * 9. LANDSLIDE ONLY
+  * ----------------------------------------------------------
+  */
 
   else if (landslidePresent) {
     status = "review";
@@ -497,8 +762,40 @@ export function buildPlanningAssessment({
   }
 
   /*
-   * No mapped hazard but runoff worsens
-   */
+  * ----------------------------------------------------------
+  * 10. TERRAIN ONLY
+  * ----------------------------------------------------------
+  */
+
+  else if (
+    mappedHazardCount === 0 &&
+    steepTerrain &&
+    terrain
+  ) {
+    status = "review";
+
+    headline =
+      "Steep terrain warrants additional site review";
+
+    summary =
+      `No mapped flood, tsunami, or landslide values were returned within the footprint, but the site has a mean slope of ${terrain.slope.mean.toFixed(
+        1
+      )}° and a maximum sampled slope of ${terrain.slope.max.toFixed(
+        1
+      )}°.`;
+
+    primaryConcern =
+      "Terrain sensitivity";
+
+    recommendedAction =
+      "Review grading, drainage, access, and geotechnical conditions before detailed development.";
+  }
+
+  /*
+  * ----------------------------------------------------------
+  * 11. RUNOFF CHANGE WITHOUT MAPPED HAZARD
+  * ----------------------------------------------------------
+  */
 
   else if (runoffChangePercent > 10) {
     status = "attention";

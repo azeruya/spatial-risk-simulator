@@ -13,7 +13,7 @@ export default function TerrainSummary({
 }: TerrainSummaryProps) {
   if (loading) {
     return (
-      <div className="mt-2 rounded-xl border border-slate-200 p-3">
+      <div className="rounded-xl border border-slate-200 p-3">
         <p className="text-xs text-slate-500">
           Analysing terrain...
         </p>
@@ -23,7 +23,7 @@ export default function TerrainSummary({
 
   if (error) {
     return (
-      <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50 p-3">
+      <div className="rounded-xl border border-amber-100 bg-amber-50 p-3">
         <p className="text-xs text-amber-700">
           Terrain data temporarily unavailable.
         </p>
@@ -36,7 +36,7 @@ export default function TerrainSummary({
   }
 
   return (
-    <div className="mt-2">
+    <div>
       <div className="grid grid-cols-2 gap-2">
         <TerrainMetric
           label="Mean elevation"

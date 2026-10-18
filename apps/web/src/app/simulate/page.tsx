@@ -4,13 +4,17 @@ import { useMemo, useEffect, useState } from "react";
 import { circle } from "@turf/circle";
 import { area } from "@turf/area";
 import centroid from "@turf/centroid";
+import center from "@turf/center";
 import { useSearchParams } from "next/navigation";
 
 import ScenarioPanel, { ScenarioType } from "@/components/simulate/ScenarioPanel";
 import SimulationMap, { SelectedSite } from "@/components/simulate/SimulationMap";
 import ImpactPanel from "@/components/simulate/ImpactPanel";
+
 import type { AreaUnit, FootprintHazardAnalysis, FootprintHazards, FootprintMode, SimulationBaseline } from "@/types/simulation";
 import { areaToM2, SimulationView, DrawShape } from "@/types/simulation";
+import type { TerrainAnalysis } from "@/types/terrain";
+
 import { simulateDevelopment } from "@/lib/simulation";
 import { createRectangleFootprint } from "@/lib/geometry";
 import { buildPlanningAssessment } from "@/lib/planning-assessment";
@@ -133,6 +137,15 @@ export default function SimulatePage() {
       landslide: null,
     });
 
+  const [terrainAnalysis, setTerrainAnalysis] =
+    useState<TerrainAnalysis | null>(null);
+
+  const [terrainLoading, setTerrainLoading] =
+    useState(false);
+
+  const [terrainError, setTerrainError] =
+    useState(false);
+
   const [drawShape, setDrawShape] =
     useState<DrawShape>("rectangle");
 
@@ -217,6 +230,7 @@ export default function SimulatePage() {
     setAnalysisRadiusMeters,
   ] = useState<250 | 500 | 1000>(500);
 
+
   const retentionFactor = {
     none: 0,
     low: 0.1,
@@ -282,10 +296,47 @@ export default function SimulatePage() {
     projectAreaM2,
   ]);
 
+  const projectTerrainCenter = useMemo(() => {
+    if (!projectFootprint) {
+      return null;
+    }
+
+    const featureCenter =
+      center(projectFootprint);
+
+    return {
+      longitude:
+        featureCenter.geometry.coordinates[0],
+      latitude:
+        featureCenter.geometry.coordinates[1],
+    };
+  }, [projectFootprint]);
+
+  const projectTerrainRadius =
+    useMemo(() => {
+      if (!projectFootprint) {
+        return null;
+      }
+
+      const equivalentRadiusMeters =
+        Math.sqrt(
+          projectAreaM2 / Math.PI
+        );
+
+      return Math.max(
+        100,
+        Math.min(
+          equivalentRadiusMeters * 2,
+          500
+        )
+      );
+    }, [
+      projectFootprint,
+      projectAreaM2,
+    ]);
+
   const hasDefinedSite =
     projectFootprint !== null;
-
-  
 
   const analysisCenter = useMemo(() => {
       if (projectFootprint) {
@@ -386,15 +437,20 @@ export default function SimulatePage() {
         simulationResult.mitigationReductionPercent,
 
       hazards: footprintHazards,
+
+      terrain: terrainAnalysis,
     });
   }, [
     projectAreaM2,
     imperviousPercent,
     greenPercent,
     additionalPopulation,
+
     simulationResult.runoffChangePercent,
     simulationResult.mitigationReductionPercent,
+
     footprintHazards,
+    terrainAnalysis,
   ]);
 
   const hasMitigation =
@@ -684,6 +740,89 @@ export default function SimulatePage() {
       };
     }, [projectFootprint]);
 
+  useEffect(() => {
+    if (
+      !projectTerrainCenter ||
+      !projectTerrainRadius
+    ) {
+      setTerrainAnalysis(null);
+      setTerrainLoading(false);
+      setTerrainError(false);
+
+      return;
+    }
+
+    const controller =
+      new AbortController();
+
+    async function loadTerrain() {
+      setTerrainLoading(true);
+      setTerrainError(false);
+
+      try {
+        const response =
+          await fetch(
+            "/api/terrain/analyse",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body: JSON.stringify({
+                longitude:
+                  projectTerrainCenter?.longitude,
+                latitude:
+                  projectTerrainCenter?.latitude,
+                radiusMeters:
+                  projectTerrainRadius,
+              }),
+              signal:
+                controller.signal,
+            }
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            "Terrain analysis failed"
+          );
+        }
+
+        const data:
+          TerrainAnalysis =
+          await response.json();
+
+        setTerrainAnalysis(data);
+      } catch (error) {
+        if (
+          error instanceof DOMException &&
+          error.name === "AbortError"
+        ) {
+          return;
+        }
+
+        console.error(
+          "Simulation terrain analysis failed:",
+          error
+        );
+
+        setTerrainAnalysis(null);
+        setTerrainError(true);
+      } finally {
+        setTerrainLoading(false);
+      }
+    }
+
+    loadTerrain();
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    projectTerrainCenter,
+    projectTerrainRadius,
+  ]);
+
   return (
     <main className="h-[calc(100vh-73px)] bg-slate-50">
       <div className="flex h-full min-h-0 w-full overflow-hidden">
@@ -919,8 +1058,15 @@ export default function SimulatePage() {
 
                 analysisRadiusMeters={analysisRadiusMeters}
                 setAnalysisRadiusMeters={
-                setAnalysisRadiusMeters
-              }
+                  setAnalysisRadiusMeters
+                }
+
+                terrainAnalysis={terrainAnalysis}
+                terrainLoading={terrainLoading}
+                terrainError={terrainError}
+                terrainRadiusMeters={
+                  projectTerrainRadius
+                }
               />
             ) : (
               <div className="flex h-full items-start justify-center pt-16">
