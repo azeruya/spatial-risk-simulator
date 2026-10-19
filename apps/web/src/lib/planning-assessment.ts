@@ -95,6 +95,35 @@ export function buildPlanningAssessment({
     greenPercent -
     baselineGreenPercent;
 
+  const stronglyMoreImpervious =
+    imperviousChange >= 15;
+
+  const moderatelyMoreImpervious =
+    imperviousChange >= 5;
+
+  const meaningfullyLessImpervious =
+    imperviousChange <= -10;
+
+  const majorGreenLoss =
+    greenChange <= -15;
+
+  const greenGain =
+    greenChange >= 10;
+
+  const improvesSurfaceCondition =
+    imperviousChange <= -10 ||
+    greenChange >= 10;
+
+  const worsensSurfaceCondition =
+    imperviousChange >= 10 ||
+    greenChange <= -10;
+
+  const highlyBuiltExistingSite =
+    baselineImperviousPercent >= 70;
+
+  const highlyVegetatedExistingSite =
+    baselineGreenPercent >= 60;
+
   const terrainContext =
     buildTerrainContext(terrain);
 
@@ -209,6 +238,26 @@ export function buildPlanningAssessment({
     );
   }
 
+  evidence.push(
+    `ESA WorldCover indicates approximately ${baselineImperviousPercent.toFixed(
+      0
+    )}% built-up cover and ${baselineGreenPercent.toFixed(
+      0
+    )}% vegetated cover within the existing footprint.`
+  );
+
+  if (highlyBuiltExistingSite) {
+    evidence.push(
+      "The existing footprint is predominantly classified as built-up in the mapped land-cover baseline."
+    );
+  }
+
+  if (highlyVegetatedExistingSite) {
+    evidence.push(
+      "The existing footprint is predominantly vegetated in the mapped land-cover baseline."
+    );
+  }
+
   /*
    * ==========================================================
    * CHANGE
@@ -218,29 +267,41 @@ export function buildPlanningAssessment({
 
   if (imperviousChange > 0) {
     change.push(
-      `Impervious surface increases from ${baselineImperviousPercent}% to ${imperviousPercent}% (+${imperviousChange.toFixed(
+      `The proposed impervious cover is ${imperviousPercent}%, compared with an existing mapped built-up proxy of ${baselineImperviousPercent.toFixed(
         0
-      )} percentage points).`
+      )}% (+${imperviousChange.toFixed(0)} percentage points).`
     );
   } else if (imperviousChange < 0) {
     change.push(
-      `Impervious surface decreases from ${baselineImperviousPercent}% to ${imperviousPercent}% (${imperviousChange.toFixed(
+      `The proposed impervious cover is ${imperviousPercent}%, compared with an existing mapped built-up proxy of ${baselineImperviousPercent.toFixed(
         0
-      )} percentage points).`
+      )}% (${imperviousChange.toFixed(0)} percentage points).`
+    );
+  } else {
+    change.push(
+      `The proposed impervious cover is broadly similar to the existing mapped built-up proxy (${imperviousPercent}%).`
     );
   }
 
   if (greenChange < 0) {
     change.push(
-      `Green and open space decreases from ${baselineGreenPercent}% to ${greenPercent}% (${greenChange.toFixed(
+      `Proposed green and open space decreases from approximately ${baselineGreenPercent.toFixed(
+        0
+      )}% mapped vegetated cover to ${greenPercent}% (${greenChange.toFixed(
         0
       )} percentage points).`
     );
   } else if (greenChange > 0) {
     change.push(
-      `Green and open space increases from ${baselineGreenPercent}% to ${greenPercent}% (+${greenChange.toFixed(
+      `Proposed green and open space increases from approximately ${baselineGreenPercent.toFixed(
+        0
+      )}% mapped vegetated cover to ${greenPercent}% (+${greenChange.toFixed(
         0
       )} percentage points).`
+    );
+  } else {
+    change.push(
+      `Proposed green and open space is broadly similar to the existing mapped vegetated cover (${greenPercent}%).`
     );
   }
 
@@ -256,6 +317,76 @@ export function buildPlanningAssessment({
    * Why do those changes matter in this context?
    * ==========================================================
    */
+
+  /*
+  * --------------------------------
+  * BASELINE → PROPOSAL CHANGE
+  * --------------------------------
+  */
+
+  if (meaningfullyLessImpervious) {
+    consequence.push(
+      `The proposal reduces developed surface relative to the mapped baseline by approximately ${Math.abs(
+        imperviousChange
+      ).toFixed(0)} percentage points, which may improve infiltration capacity compared with the existing site condition.`
+    );
+  }
+
+  if (greenGain) {
+    consequence.push(
+      `The proposal increases green and open space by approximately ${greenChange.toFixed(
+        0
+      )} percentage points relative to the mapped vegetated baseline.`
+    );
+  }
+
+  if (
+    meaningfullyLessImpervious &&
+    runoffChangePercent < 0
+  ) {
+    consequence.push(
+      `The comparative runoff-pressure indicator decreases by ${Math.abs(
+        runoffChangePercent
+      ).toFixed(
+        1
+      )}%, consistent with the proposed reduction in developed surface.`
+    );
+  }
+
+  if (
+    stronglyMoreImpervious &&
+    runoffChangePercent > 0
+  ) {
+    consequence.push(
+      `The proposed design introduces substantially more impervious surface than the mapped existing baseline, contributing to a ${runoffChangePercent.toFixed(
+        1
+      )}% increase in comparative runoff pressure.`
+    );
+  }
+
+  if (majorGreenLoss) {
+    consequence.push(
+      `The proposal removes a substantial share of the site's mapped vegetated cover, reducing potential infiltration and surface-water buffering.`
+    );
+  }
+  if (
+    floodPresent &&
+      worsensSurfaceCondition
+    ) {
+      consequence.push(
+        "The proposal worsens surface-cover conditions within an already mapped flood-sensitive footprint, increasing the importance of runoff control and infiltration measures."
+      );
+    }
+
+  if (
+    floodPresent &&
+    improvesSurfaceCondition &&
+    runoffChangePercent < 0
+  ) {
+    consequence.push(
+      "Although mapped flood hazard is present, the proposed surface configuration improves on the existing mapped baseline by reducing development intensity or increasing green space."
+    );
+  }
 
   if (
     floodPresent &&
@@ -393,6 +524,25 @@ export function buildPlanningAssessment({
    */
 
   if (
+    improvesSurfaceCondition &&
+    runoffChangePercent < 0
+  ) {
+    responses.push(
+      "Retain the proposed reduction in sealed surface and preserve the planned green or permeable areas through detailed design."
+    );
+  }
+
+  if (
+  floodPresent &&
+    improvesSurfaceCondition &&
+    runoffChangePercent < 0
+  ) {
+    responses.push(
+      "Maintain the improved surface-water performance while still reviewing drainage capacity, finished-floor elevation, and residual flood exposure."
+    );
+  }
+
+  if (
     floodPresent &&
     runoffChangePercent > 0
   ) {
@@ -528,6 +678,7 @@ export function buildPlanningAssessment({
       "Limit unnecessary cut-and-fill, control concentrated runoff, and undertake site-specific geotechnical assessment before detailed design.";
   }
 
+
   /*
   * ----------------------------------------------------------
   * 2. TSUNAMI + VERY LOW / LOW TERRAIN
@@ -635,6 +786,33 @@ export function buildPlanningAssessment({
 
   else if (
     floodPresent &&
+    tsunamiPresent &&
+    improvesSurfaceCondition &&
+    runoffChangePercent < 0
+  ) {
+    status = "review";
+
+    headline =
+      "Surface design improves runoff conditions, but tsunami exposure remains";
+
+    summary =
+      `The ${formatArea(
+        projectAreaM2
+      )} proposed footprint contains mapped flood and tsunami hazard values. The proposed surface design reduces comparative runoff pressure by ${Math.abs(
+        runoffChangePercent
+      ).toFixed(
+        1
+      )}% relative to the existing mapped land-cover baseline, but tsunami exposure remains unaffected by stormwater improvements.`;
+
+    primaryConcern =
+      "Residual tsunami exposure and flood-sensitive site conditions";
+
+    recommendedAction =
+      "Retain the improved surface design while separately reviewing evacuation access, site suitability, and vertical evacuation options for tsunami exposure.";
+  }
+
+  else if (
+    floodPresent &&
     tsunamiPresent
   ) {
     status = "review";
@@ -712,6 +890,62 @@ export function buildPlanningAssessment({
 
   /*
   * ----------------------------------------------------------
+  * BASELINE IMPROVEMENT WITH FLOOD CONTEXT
+  * ----------------------------------------------------------
+  */
+
+  else if (
+    floodPresent &&
+    improvesSurfaceCondition &&
+    runoffChangePercent < 0
+  ) {
+    status = "attention";
+
+    headline =
+      "Proposal improves surface conditions within a flood-sensitive site";
+
+    summary =
+      `The ${formatArea(
+        projectAreaM2
+      )} footprint contains mapped flood-hazard values, but the proposed design reduces comparative runoff pressure by ${Math.abs(
+        runoffChangePercent
+      ).toFixed(
+        1
+      )}% relative to the existing mapped surface baseline.`;
+
+    primaryConcern =
+      "Residual flood exposure despite improved surface design";
+
+    recommendedAction =
+      "Retain the proposed reduction in sealed surface and increased green space while continuing to review drainage, finished-floor elevation, and residual flood exposure.";
+  }
+
+  else if (
+    mappedHazardCount === 0 &&
+    improvesSurfaceCondition &&
+    runoffChangePercent < -5
+  ) {
+    status = "low";
+
+    headline =
+      "Proposal improves surface conditions relative to the existing site";
+
+    summary =
+      `The proposed design reduces comparative runoff pressure by ${Math.abs(
+        runoffChangePercent
+      ).toFixed(
+        1
+      )}% relative to the mapped existing land-cover baseline.`;
+
+    primaryConcern =
+      "Preserving the proposed permeability and green-space gains";
+
+    recommendedAction =
+      "Retain the proposed reduction in sealed surface and protect planned green and permeable areas through detailed design.";
+  }
+
+  /*
+  * ----------------------------------------------------------
   * 8. FLOOD + RUNOFF INCREASE
   * ----------------------------------------------------------
   */
@@ -726,9 +960,11 @@ export function buildPlanningAssessment({
       "Development may amplify runoff in a mapped flood-hazard area";
 
     summary =
-      `The proposed design increases comparative runoff pressure by ${runoffChangePercent.toFixed(
-        1
-      )}% while mapped flood-hazard values are already present within the footprint.`;
+    `The proposed design increases impervious cover from an existing mapped built-up proxy of approximately ${baselineImperviousPercent.toFixed(
+      0
+    )}% to ${imperviousPercent}%, contributing to a ${runoffChangePercent.toFixed(
+      1
+    )}% increase in comparative runoff pressure within a mapped flood-hazard footprint.`;
 
     primaryConcern =
       "Increased runoff within flood-sensitive context";
@@ -789,6 +1025,28 @@ export function buildPlanningAssessment({
 
     recommendedAction =
       "Review grading, drainage, access, and geotechnical conditions before detailed development.";
+  }
+
+  else if (
+    mappedHazardCount === 0 &&
+    worsensSurfaceCondition &&
+    runoffChangePercent > 5
+  ) {
+    status = "attention";
+
+    headline =
+      "Proposal intensifies surface development relative to the existing site";
+
+    summary =
+      `The proposed design increases impervious cover relative to the mapped built-up baseline and raises comparative runoff pressure by ${runoffChangePercent.toFixed(
+        1
+      )}%.`;
+
+    primaryConcern =
+      "Loss of existing infiltration and vegetated cover";
+
+    recommendedAction =
+      "Reduce unnecessary sealed surface, preserve existing vegetation where feasible, and introduce infiltration or retention measures.";
   }
 
   /*

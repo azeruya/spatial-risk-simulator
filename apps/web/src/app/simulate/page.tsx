@@ -14,15 +14,12 @@ import ImpactPanel from "@/components/simulate/ImpactPanel";
 import type { AreaUnit, FootprintHazardAnalysis, FootprintHazards, FootprintMode, SimulationBaseline } from "@/types/simulation";
 import { areaToM2, SimulationView, DrawShape } from "@/types/simulation";
 import type { TerrainAnalysis } from "@/types/terrain";
+import { LandCoverAnalysis } from "@/types/land-cover";
 
 import { simulateDevelopment } from "@/lib/simulation";
 import { createRectangleFootprint } from "@/lib/geometry";
 import { buildPlanningAssessment } from "@/lib/planning-assessment";
 
-const BASELINE_LAND_COVER = {
-  imperviousPercent: 40,
-  greenPercent: 40,
-} as const;
 
 type RetentionLevel =
   | "none"
@@ -145,6 +142,30 @@ export default function SimulatePage() {
 
   const [terrainError, setTerrainError] =
     useState(false);
+
+  const [landCoverAnalysis, setLandCoverAnalysis] =
+    useState<LandCoverAnalysis | null>( null );
+
+  const [landCoverLoading, setLandCoverLoading] =
+    useState(false);
+
+  const [landCoverError, setLandCoverError] =
+    useState(false);
+
+  const baselineImperviousPercent =
+    landCoverAnalysis
+      ?.planning
+      .builtUpPercent ?? null;
+
+  const baselineGreenPercent =
+    landCoverAnalysis
+      ?.planning
+      .vegetatedPercent ?? null;
+
+  const landCoverReady =
+    landCoverAnalysis !== null &&
+    !landCoverLoading &&
+    !landCoverError;
 
   const [drawShape, setDrawShape] =
     useState<DrawShape>("rectangle");
@@ -380,7 +401,9 @@ export default function SimulatePage() {
 
   const analysisReady =
     hasValidFootprint &&
-    !footprintHazardsLoading;
+    !footprintHazardsLoading &&
+    !terrainLoading &&
+    !landCoverLoading;
 
   const simulationResult = useMemo(() => {
     return simulateDevelopment({
@@ -394,10 +417,10 @@ export default function SimulatePage() {
       additionalPopulation,
 
       baselineImperviousPercent:
-        BASELINE_LAND_COVER.imperviousPercent,
+        baselineImperviousPercent ?? 0,
 
       baselineGreenPercent:
-        BASELINE_LAND_COVER.greenPercent,
+        baselineGreenPercent ?? 0,
 
       mitigation: {
         permeableSurfacePercent,
@@ -411,6 +434,10 @@ export default function SimulatePage() {
     imperviousPercent,
     greenPercent,
     additionalPopulation,
+
+    baselineImperviousPercent,
+    baselineGreenPercent,
+
     permeableSurfacePercent,
     greenInfrastructurePercent,
     retentionFactor,
@@ -422,11 +449,12 @@ export default function SimulatePage() {
 
       imperviousPercent,
       baselineImperviousPercent:
-        BASELINE_LAND_COVER.imperviousPercent,
+        baselineImperviousPercent ?? 0,
 
       greenPercent,
+
       baselineGreenPercent:
-        BASELINE_LAND_COVER.greenPercent,
+        baselineGreenPercent ?? 0,
 
       additionalPopulation,
 
@@ -445,6 +473,9 @@ export default function SimulatePage() {
     imperviousPercent,
     greenPercent,
     additionalPopulation,
+
+    baselineImperviousPercent,
+    baselineGreenPercent,
 
     simulationResult.runoffChangePercent,
     simulationResult.mitigationReductionPercent,
@@ -823,6 +854,73 @@ export default function SimulatePage() {
     projectTerrainRadius,
   ]);
 
+  useEffect(() => {
+    if (!projectFootprint) {
+      setLandCoverAnalysis(null);
+      setLandCoverError(false);
+      setLandCoverLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadLandCover() {
+      setLandCoverLoading(true);
+      setLandCoverError(false);
+
+      try {
+        const response = await fetch("api/land-cover/analyse",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type": "application/json",
+            },
+
+            body: JSON.stringify({
+              polygon: projectFootprint,
+            }),
+
+            signal: controller.signal,
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error (
+            "Land cover analysis failed!"
+          );
+        }
+
+        const data: LandCoverAnalysis = await response.json();
+
+        setLandCoverAnalysis(data);
+      } catch (error) {
+        if (
+          error instanceof DOMException &&
+          error.name === "AbortError"
+        ) {
+          return;
+        }
+
+        console.error(
+          "Land cover analysis error:",
+          error
+        );
+
+        setLandCoverAnalysis(null);
+        setLandCoverError(true);
+      } finally {
+        setLandCoverLoading(false);
+      }
+    }
+
+    loadLandCover();
+
+    return () => {
+      controller.abort();
+    };
+  }, [projectFootprint]);
+
   return (
     <main className="h-[calc(100vh-73px)] bg-slate-50">
       <div className="flex h-full min-h-0 w-full overflow-hidden">
@@ -1067,6 +1165,10 @@ export default function SimulatePage() {
                 terrainRadiusMeters={
                   projectTerrainRadius
                 }
+
+                landCoverAnalysis={landCoverAnalysis}
+                landCoverLoading={landCoverLoading}
+                landCoverError={landCoverError}
               />
             ) : (
               <div className="flex h-full items-start justify-center pt-16">

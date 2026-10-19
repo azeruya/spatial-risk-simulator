@@ -7,6 +7,7 @@ import type { SimulationResult } from "@/lib/simulation";
 import type { RetentionLevel } from "./ScenarioPanel";
 import type { TerrainAnalysis } from "@/types/terrain";
 import TerrainSummary from "../risk/TerrainSummary";
+import { LandCoverAnalysis } from "@/types/land-cover";
 
 type FootprintHazards = {
   flood: FootprintHazardAnalysis | null;
@@ -52,6 +53,12 @@ type ImpactPanelProps = {
 
   terrainRadiusMeters:
     number | null;
+
+  landCoverAnalysis:
+    LandCoverAnalysis | null;
+
+  landCoverLoading: boolean;
+  landCoverError: boolean;
 };
 
 type FootprintHazardAnalysis = {
@@ -88,7 +95,11 @@ export default function ImpactPanel({
   terrainAnalysis,
   terrainError,
   terrainLoading,
-  terrainRadiusMeters
+  terrainRadiusMeters,
+
+  landCoverAnalysis,
+  landCoverError,
+  landCoverLoading
 }: ImpactPanelProps) {
   const [showRunoffInfo, setShowRunoffInfo] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
@@ -325,6 +336,56 @@ export default function ImpactPanel({
         hazards={footprintHazards}
         loading={footprintHazardsLoading}
       />
+
+      <section className="border-t border-slate-100 pt-5">
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Existing site cover
+            </p>
+
+            <p className="mt-1 text-xs text-slate-500">
+              Current mapped surface conditions within the proposed footprint.
+            </p>
+          </div>
+
+          <span className="text-[10px] text-slate-400">
+            ESA WorldCover 2021
+          </span>
+        </div>
+
+        {landCoverLoading ? (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
+            Analysing existing land cover...
+          </div>
+        ) : landCoverError ? (
+          <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-700">
+            Existing land-cover data unavailable.
+          </div>
+        ) : landCoverAnalysis ? (
+          <div className="grid grid-cols-2 gap-2">
+            <LandCoverMetric
+              label="Built-up proxy"
+              value={`${landCoverAnalysis.planning.builtUpPercent.toFixed(0)}%`}
+            />
+
+            <LandCoverMetric
+              label="Vegetated"
+              value={`${landCoverAnalysis.planning.vegetatedPercent.toFixed(0)}%`}
+            />
+
+            <LandCoverMetric
+              label="Water / wetland"
+              value={`${landCoverAnalysis.planning.waterPercent.toFixed(0)}%`}
+            />
+
+            <LandCoverMetric
+              label="Other"
+              value={`${landCoverAnalysis.planning.otherPercent.toFixed(0)}%`}
+            />
+          </div>
+        ) : null}
+      </section>
 
       {/* ============================================================
           terrain/elevation 
@@ -1697,6 +1758,26 @@ function MitigationEffectRow({
 
       <p className="text-xs font-semibold text-emerald-700">
         -{value.toFixed(1)}%
+      </p>
+    </div>
+  );
+}
+
+function LandCoverMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <p className="text-[9px] uppercase tracking-wide text-slate-400">
+        {label}
+      </p>
+
+      <p className="mt-1 text-base font-semibold text-slate-900">
+        {value}
       </p>
     </div>
   );
