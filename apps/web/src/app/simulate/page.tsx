@@ -7,14 +7,16 @@ import centroid from "@turf/centroid";
 import center from "@turf/center";
 import { useSearchParams } from "next/navigation";
 
-import ScenarioPanel, { ScenarioType } from "@/components/simulate/ScenarioPanel";
-import SimulationMap, { SelectedSite } from "@/components/simulate/SimulationMap";
+import ScenarioPanel from "@/components/simulate/ScenarioPanel";
+import { ScenarioType } from "@/types/simulation";
+import SimulationMap, { SelectedSite } from "@/components/simulate/map/SimulationMap";
 import ImpactPanel from "@/components/simulate/ImpactPanel";
 
 import type { AreaUnit, FootprintHazardAnalysis, FootprintHazards, FootprintMode, SimulationBaseline } from "@/types/simulation";
 import { areaToM2, SimulationView, DrawShape } from "@/types/simulation";
 import type { TerrainAnalysis } from "@/types/terrain";
 import { LandCoverAnalysis } from "@/types/land-cover";
+import type { Footprint } from "@/types/map";
 
 import { simulateDevelopment } from "@/lib/simulation";
 import { createRectangleFootprint } from "@/lib/geometry";
@@ -35,62 +37,114 @@ type HazardOverlay =
 
 async function fetchFootprintHazard(
   endpoint: string,
-  polygon: GeoJSON.Feature<GeoJSON.Polygon>
+  polygon: Footprint,
+  parentSignal?: AbortSignal
 ): Promise<FootprintHazardAnalysis | null> {
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      polygon,
-      sampleCount: 25,
-    }),
-  });
+  const controller = new AbortController();
 
-  if (!response.ok) {
-    return null;
-  }
+  let timedOut = false;
 
-  const data = await response.json();
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 20_000);
 
-  console.log(
-    `[footprint hazard] ${endpoint}`,
-    {
-      status: response.status,
-      data,
-    }
+  const abortFromParent = () => {
+    controller.abort();
+  };
+
+  parentSignal?.addEventListener(
+    "abort",
+    abortFromParent
   );
 
-  const validSamples =
-    typeof data.validSamples === "number"
-      ? data.validSamples
-      : 0;
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        polygon,
+        sampleCount: 16,
+      }),
+      signal: controller.signal,
+    });
 
-  const totalSamples =
-    typeof data.totalSamples === "number"
-      ? data.totalSamples
-      : 0;
+    console.log(
+      `[footprint hazard] ${endpoint}`,
+      {
+        status: response.status,
+      }
+    );
 
-  return {
-    average:
-      typeof data.average === "number"
-        ? data.average
-        : null,
+    if (!response.ok) {
+      return null;
+    }
 
-    maximum:
-      typeof data.maximum === "number"
-        ? data.maximum
-        : null,
+    const data = await response.json();
 
-    validSamples,
-    totalSamples,
+    const validSamples =
+      typeof data.validSamples === "number"
+        ? data.validSamples
+        : 0;
 
-    coveragePercent:
-      totalSamples > 0
-        ? (validSamples / totalSamples) * 100
-        : 0,
-  };
+    const totalSamples =
+      typeof data.totalSamples === "number"
+        ? data.totalSamples
+        : 0;
+
+    return {
+      average:
+        typeof data.average === "number"
+          ? data.average
+          : null,
+
+      maximum:
+        typeof data.maximum === "number"
+          ? data.maximum
+          : null,
+
+      validSamples,
+      totalSamples,
+
+      coveragePercent:
+        totalSamples > 0
+          ? (validSamples / totalSamples) * 100
+          : 0,
+    };
+  } catch (error) {
+    if (
+      error instanceof DOMException &&
+      error.name === "AbortError"
+    ) {
+      if (timedOut) {
+        console.warn(
+          `[footprint hazard] timed out: ${endpoint}`
+        );
+      } else {
+        console.log(
+          `[footprint hazard] cancelled: ${endpoint}`
+        );
+      }
+
+      return null;
+    }
+
+    console.error(
+      `[footprint hazard] failed: ${endpoint}`,
+      error
+    );
+
+    return null;
+  } finally {
+    window.clearTimeout(timeoutId);
+
+    parentSignal?.removeEventListener(
+      "abort",
+      abortFromParent
+    );
+  }
 }
 
 export default function SimulatePage() {
@@ -222,11 +276,11 @@ export default function SimulatePage() {
     setFootprintMode("draw");
     setDrawShape("rectangle");
 
-    setAreaValue(1);
+    setAreaValue(0);
     setAreaUnit("ha");
 
-    setWidthM(100);
-    setLengthM(100);
+    setWidthM(0);
+    setLengthM(0);
     setBearing(0);
 
     setSelectedSite(null);
@@ -244,8 +298,33 @@ export default function SimulatePage() {
     setGreenInfrastructurePercent(0);
     setRetentionLevel("none");
 
-    // Scenario display
+    // Display
     setSimulationView("proposed");
+    setHazardOverlay(null);
+
+    // Analysis
+    setFootprintHazards({
+      flood: null,
+      tsunami: null,
+      landslide: null,
+    });
+
+    setTerrainAnalysis(null);
+    setTerrainError(false);
+    setTerrainLoading(false);
+
+    setLandCoverAnalysis(null);
+    setLandCoverError(false);
+    setLandCoverLoading(false);
+
+    setBaseline({
+      status: "idle",
+      population: null,
+      populationDensity: null,
+      floodAverage: null,
+      floodMaximum: null,
+      floodCoveragePercent: null,
+    });
   }
 
   const drawnAreaM2 = useMemo(() => {
@@ -323,10 +402,6 @@ export default function SimulatePage() {
 
   const projectFootprint = useMemo(() => {
     if (footprintMode === "draw") {
-      if (!drawnFootprint || drawnAreaM2 <= 1) {
-        return null;
-      }
-
       return drawnFootprint;
     }
 
@@ -335,7 +410,10 @@ export default function SimulatePage() {
     }
 
     if (footprintMode === "dimensions") {
-      if (widthM <= 0 || lengthM <= 0) {
+      if (
+        widthM <= 0 ||
+        lengthM <= 0
+      ) {
         return null;
       }
 
@@ -348,31 +426,35 @@ export default function SimulatePage() {
       );
     }
 
-    // Area mode
-    if (projectAreaM2 <= 1) {
-      return null;
+    if (footprintMode === "area") {
+      if (projectAreaM2 <= 0) {
+        return null;
+      }
+
+      const radiusM =
+        Math.sqrt(
+          projectAreaM2 / Math.PI
+        );
+
+      return circle(
+        [
+          selectedSite.longitude,
+          selectedSite.latitude,
+        ],
+        radiusM / 1000,
+        {
+          steps: 48,
+          units: "kilometers",
+        }
+      ) as Footprint;
     }
 
-    const radiusMeters = Math.sqrt(
-      projectAreaM2 / Math.PI
-    );
-
-    return circle(
-      [
-        selectedSite.longitude,
-        selectedSite.latitude,
-      ],
-      radiusMeters / 1000,
-      {
-        steps: 64,
-        units: "kilometers",
-      }
-    );
+    return null;
   }, [
     footprintMode,
     drawnFootprint,
-    drawnAreaM2,
-    selectedSite,
+    selectedSite?.longitude,
+    selectedSite?.latitude,
     widthM,
     lengthM,
     bearing,
@@ -462,9 +544,13 @@ export default function SimulatePage() {
 
   const analysisReady =
     hasValidFootprint &&
-    !footprintHazardsLoading &&
     !terrainLoading &&
-    !landCoverLoading;
+    !landCoverLoading &&
+    (
+      footprintHazards.flood !== null ||
+      footprintHazards.tsunami !== null ||
+      footprintHazards.landslide !== null
+    );
 
   const simulationResult = useMemo(() => {
     return simulateDevelopment({
@@ -760,77 +846,89 @@ export default function SimulatePage() {
     ]);       
 
     useEffect(() => {
-      if (!projectFootprint) {
-        setFootprintHazards({
-          flood: null,
-          tsunami: null,
-          landslide: null,
-        });
+  if (!projectFootprint) {
+    setFootprintHazards({
+      flood: null,
+      tsunami: null,
+      landslide: null,
+    });
 
+    setFootprintHazardsLoading(false);
+    return;
+  }
+
+  const controller =
+    new AbortController();
+
+  const footprint =
+    projectFootprint;
+
+  let cancelled = false;
+
+  setFootprintHazards({
+    flood: null,
+    tsunami: null,
+    landslide: null,
+  });
+
+  setFootprintHazardsLoading(true);
+
+  async function loadHazard(
+    key:
+      | "flood"
+      | "tsunami"
+      | "landslide",
+    endpoint: string
+  ) {
+    const result =
+      await fetchFootprintHazard(
+        endpoint,
+        footprint,
+        controller.signal
+      );
+
+    if (cancelled) {
+      return;
+    }
+
+    setFootprintHazards(
+      (current) => ({
+        ...current,
+        [key]: result,
+      })
+    );
+  }
+
+  const requests = [
+    loadHazard(
+      "flood",
+      "/api/bnpb/flood-hazard/footprint"
+    ),
+
+    loadHazard(
+      "tsunami",
+      "/api/bnpb/tsunami-hazard/footprint"
+    ),
+
+    loadHazard(
+      "landslide",
+      "/api/bnpb/landslide-hazard/footprint"
+    ),
+  ];
+
+  Promise.allSettled(requests).finally(
+    () => {
+      if (!cancelled) {
         setFootprintHazardsLoading(false);
-
-        return;
       }
+    }
+  );
 
-      const footprint = projectFootprint;
-
-      let cancelled = false;
-
-      async function analyseFootprint() {
-        setFootprintHazardsLoading(true);
-
-        try {
-          const [flood, tsunami, landslide] =
-            await Promise.all([
-              fetchFootprintHazard(
-                "/api/bnpb/flood-hazard/footprint",
-                footprint
-              ),
-
-              fetchFootprintHazard(
-                "/api/bnpb/tsunami-hazard/footprint",
-                footprint
-              ),
-
-              fetchFootprintHazard(
-                "/api/bnpb/landslide-hazard/footprint",
-                footprint
-              ),
-            ]);
-
-          if (cancelled) return;
-
-          setFootprintHazards({
-            flood,
-            tsunami,
-            landslide,
-          });
-        } catch (error) {
-          console.error(
-            "Footprint hazard analysis failed",
-            error
-          );
-
-          if (!cancelled) {
-            setFootprintHazards({
-              flood: null,
-              tsunami: null,
-              landslide: null,
-            });
-          }
-        } finally {
-          if (!cancelled) {
-            setFootprintHazardsLoading(false);
-          }
-        }
-      }
-
-      analyseFootprint();
-
-      return () => {
-        cancelled = true;
-      };
-    }, [projectFootprint]);
+  return () => {
+    cancelled = true;
+    controller.abort();
+  };
+}, [projectFootprint]);
 
   useEffect(() => {
     if (
@@ -990,7 +1088,6 @@ export default function SimulatePage() {
         <div
           className={`
             relative shrink-0 border-r border-slate-200 bg-white
-            transition-[width] duration-300 ease-out
             ${leftPanelOpen ? "w-[340px]" : "w-10"}
           `}
         >
@@ -1132,60 +1229,33 @@ export default function SimulatePage() {
           <SimulationMap
             selectedSite={selectedSite}
             onSelectSite={setSelectedSite}
-
             projectAreaHa={projectAreaHa}
-
             footprintMode={footprintMode}
             widthM={widthM}
             lengthM={lengthM}
-            bearing={bearing}
-
             projectFootprint={projectFootprint}
             setDrawnFootprint={setDrawnFootprint}
             hasDefinedSite={hasDefinedSite}
-
             isDrawing={isDrawing}
             setIsDrawing={setIsDrawing}
             drawShape={drawShape}
-
             imperviousPercent={imperviousPercent}
             greenPercent={greenPercent}
-
-            permeableSurfacePercent={
-              permeableSurfacePercent
-            }
-            greenInfrastructurePercent={
-              greenInfrastructurePercent
-            }
+            permeableSurfacePercent={permeableSurfacePercent}
+            greenInfrastructurePercent={greenInfrastructurePercent}
             retentionLevel={retentionLevel}
-
             simulationView={simulationView}
-            setSimulationView={setSimulationView}
             analysisCircle={analysisCircle}
-            scenarioRunoffPressure={
-              simulationResult.scenarioRunoffPressure
-            }
-            mitigatedRunoffPressure={
-              simulationResult.mitigatedRunoffPressure
-            }
-            mitigationReductionPercent={
-              simulationResult.mitigationReductionPercent
-            }
-            baselineRunoffPressure={
-              simulationResult.baselineRunoffPressure
-            }
             hazardMapped={hazardMapped}
             hazardPresent={hazardPresent}
             hazardOverlay={hazardOverlay}
             setHazardOverlay={setHazardOverlay}
-            layoutVersion={`${leftPanelOpen}-${rightPanelOpen}`}
           />
         </div>
 
-        <div
+       <div
           className={`
             relative shrink-0 border-l border-slate-200 bg-white
-            transition-[width] duration-300 ease-out
             ${rightPanelOpen ? "w-[380px]" : "w-12"}
           `}
         >
