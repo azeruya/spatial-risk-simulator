@@ -18,6 +18,45 @@ export type SimulationView =
   | "proposed"
   | "mitigated";
 
+export type MapView =
+  | "map"
+  | "satellite"
+  | "terrain";
+
+export type HazardKey =
+  | "flood"
+  | "tsunami"
+  | "landslide";
+
+export type HazardOverlay =
+  | "flood"
+  | "tsunami"
+  | "landslide"
+  | null;
+
+export const HAZARD_STYLE = {
+  flood: {
+    opacity: 0.22,
+    tintOpacity: 0.08,
+    tint: "#f59e0b",
+    label: "Flood",
+  },
+
+  tsunami: {
+    opacity: 0.18,
+    tintOpacity: 0.10,
+    tint: "#06b6d4",
+    label: "Tsunami",
+  },
+
+  landslide: {
+    opacity: 0.22,
+    tintOpacity: 0.08,
+    tint: "#f97316",
+    label: "Landslide",
+  },
+} as const;
+
 export type FootprintMode =
   | "area"
   | "dimensions"
@@ -35,6 +74,18 @@ export type ProjectFootprint = {
 export type AreaUnit =
   | "m2"
   | "ha";
+
+export type ScenarioType =
+  | "new-development"
+  | "expansion"
+  | "densification"
+  | "green-retrofit";
+
+export type RetentionLevel =
+  | "none"
+  | "low"
+  | "moderate"
+  | "high";
 
 export type FootprintHazardAnalysis = {
   average: number | null;

@@ -2,12 +2,19 @@
 
 import { useState } from "react";
 
-import type { PlanningAssessment, SimulationBaseline } from "@/types/simulation";
+import type { PlanningAssessment, SimulationBaseline, SimulationView, RetentionLevel } from "@/types/simulation";
 import type { SimulationResult } from "@/lib/simulation";
-import type { RetentionLevel } from "./ScenarioPanel";
 import type { TerrainAnalysis } from "@/types/terrain";
 import TerrainSummary from "../risk/TerrainSummary";
 import { LandCoverAnalysis } from "@/types/land-cover";
+
+import ImpactScenarioToggle from "./impact/ImpactScenarioToggle";
+import VerdictCard from "./impact/VerdictCard";
+import ImpactKpis from "./impact/ImpactKpis";
+import RunoffComparison from "./impact/RunoffComparison";
+import ImpactAccordion from "./impact/ImpactAccordion";
+
+import { getHazardStatus } from "@/lib/planning/hazard-status";
 
 type FootprintHazards = {
   flood: FootprintHazardAnalysis | null;
@@ -59,6 +66,11 @@ type ImpactPanelProps = {
 
   landCoverLoading: boolean;
   landCoverError: boolean;
+  simulationView: SimulationView;
+
+  setSimulationView: (
+    value: SimulationView
+  ) => void;
 };
 
 type FootprintHazardAnalysis = {
@@ -99,30 +111,45 @@ export default function ImpactPanel({
 
   landCoverAnalysis,
   landCoverError,
-  landCoverLoading
+  landCoverLoading,
+
+  simulationView,
+  setSimulationView,
 }: ImpactPanelProps) {
-  const [showRunoffInfo, setShowRunoffInfo] = useState(false);
-  const [showEvidence, setShowEvidence] = useState(false);
+  const [openSection, setOpenSection] =
+    useState<
+      | "evidence"
+      | "method"
+      | "recommendations"
+      | null
+    >(null);
 
-  const imperviousAreaHa =
-    projectAreaHa * (imperviousPercent / 100);
+  const floodPresent =
+    (footprintHazards.flood?.maximum ?? 0) > 0;
 
-  const greenAreaHa =
-    projectAreaHa * (greenPercent / 100);
+  const tsunamiPresent =
+    (footprintHazards.tsunami?.maximum ?? 0) > 0;
 
-  const remainingAreaHa = Math.max(
-    0,
-    projectAreaHa -
-      imperviousAreaHa -
-      greenAreaHa
-  );
+  const landslidePresent =
+    (footprintHazards.landslide?.maximum ?? 0) > 0;
 
-  const scenarioPopulation =
-  baseline?.population !== null &&
-  baseline?.population !== undefined
-    ? baseline.population +
-      additionalPopulation
-    : null;
+  const mappedHazardCount = [
+    floodPresent,
+    tsunamiPresent,
+    landslidePresent,
+  ].filter(Boolean).length;
+
+  const displayedRunoff =
+  simulationView === "current"
+    ? simulation.baselineRunoffPressure
+    : simulationView === "mitigated"
+      ? simulation.mitigatedRunoffPressure
+      : simulation.scenarioRunoffPressure;
+
+  const hasMitigation =
+    permeableSurfacePercent > 0 ||
+    greenInfrastructurePercent > 0 ||
+    retentionLevel !== "none";
 
   const baselineImperviousPercent =
     simulation.projectAreaHa > 0
@@ -144,130 +171,90 @@ export default function ImpactPanel({
   const scenarioOtherPercent =
     simulation.scenarioOtherPercent;
 
-  if (!hasValidFootprint) {
-    return (
-      <aside className="w-full border-l border-slate-200 bg-white p-5">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Scenario impact
-            </p>
+if (!hasValidFootprint) {
+  return (
+    <aside className="flex h-full w-full flex-col border-l border-slate-200/70 bg-white">
+      {/* HEADER */}
+      <div className="px-5 pb-4 pt-5">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+          Scenario impact
+        </p>
 
-            <p className="mt-1 text-sm font-medium text-slate-900">
-              Site assessment
-            </p>
+        <h2 className="mt-1.5 text-[17px] font-semibold tracking-tight text-slate-950">
+          Site assessment
+        </h2>
+      </div>
+
+      <div className="mx-5 border-t border-slate-100" />
+
+      {/* EMPTY STATE */}
+      <div className="flex flex-1 flex-col px-5 py-6">
+        <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-sm font-semibold text-blue-600">
+            1
           </div>
 
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-medium text-slate-500">
-            Waiting for site
-          </span>
-        </div>
-
-        {/* Default assessment */}
-        <section className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Awaiting site definition
-              </p>
-
-              <p className="mt-2 text-base font-semibold leading-6 text-slate-900">
-                Define a site to begin assessment
-              </p>
-            </div>
-
-            <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-slate-500">
-              Not analysed
-            </span>
-          </div>
-
-          <p className="mt-3 text-xs leading-5 text-slate-500">
-            Choose a project area, enter dimensions, or draw a footprint on the map. 
-            The simulator will then check mapped hazards and evaluate development impacts.
+          <p className="mt-3 text-[16px] font-semibold leading-6 text-slate-950">
+            Define a site to begin
           </p>
 
-          <div className="mt-4 grid gap-2">
-            <div className="rounded-xl bg-white p-3">
-              <p className="text-[10px] uppercase tracking-wide text-slate-400">
-                Primary concern
-              </p>
-
-              <p className="mt-1 text-xs font-medium text-slate-400">
-                Awaiting site analysis
-              </p>
-            </div>
-
-            <div className="rounded-xl bg-white p-3">
-              <p className="text-[10px] uppercase tracking-wide text-slate-400">
-                Recommended next step
-              </p>
-
-              <p className="mt-1 text-xs leading-5 text-slate-600">
-                Define a project area using Area, Dimensions, or Draw mode.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Hazard context placeholders */}
-        <section className="mt-5">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-            Hazard context
+          <p className="mt-2 max-w-[290px] text-xs leading-5 text-slate-500">
+            Draw a project footprint or define its
+            area and dimensions. SIVORA will then
+            analyse mapped hazards, terrain, and
+            development impacts.
           </p>
-
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {["Flood", "Tsunami", "Landslide"].map(
-              (label) => (
-                <div
-                  key={label}
-                  className="rounded-xl border border-slate-200 bg-white p-3"
-                >
-                  <p className="text-[10px] text-slate-400">
-                    {label}
-                  </p>
-
-                  <p className="mt-1 text-xs font-semibold text-slate-400">
-                    Pending
-                  </p>
-                </div>
-              )
-            )}
-          </div>
         </section>
 
-        {/* Workflow */}
-        <section className="mt-6">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+        {/* WORKFLOW */}
+        <section className="mt-7">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
             Assessment workflow
           </p>
 
-          <div className="mt-3 space-y-3">
-            <EmptyStep
+          <div className="mt-4">
+            <EmptyWorkflowStep
               number="1"
-              title="Define development site"
+              title="Define site"
+              description="Draw or size the proposed project footprint."
               active
             />
 
-            <EmptyStep
+            <EmptyWorkflowStep
               number="2"
-              title="Analyse mapped hazards"
+              title="Analyse context"
+              description="Check mapped hazards, terrain, and existing site cover."
             />
 
-            <EmptyStep
+            <EmptyWorkflowStep
               number="3"
-              title="Evaluate development change"
+              title="Compare proposal"
+              description="Measure how the proposed design changes surface conditions."
             />
 
-            <EmptyStep
+            <EmptyWorkflowStep
               number="4"
-              title="Test mitigation options"
+              title="Test mitigation"
+              description="Explore measures that can reduce development impacts."
+              last
             />
           </div>
         </section>
-      </aside>
-    );
-  }
+
+        {/* FOOTNOTE */}
+        <div className="mt-auto pt-8">
+          <div className="rounded-xl bg-slate-50 px-3.5 py-3">
+            <p className="text-[10px] leading-4 text-slate-500">
+              Results are screening-level planning
+              indicators and should not be interpreted
+              as detailed engineering analysis.
+            </p>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
 
   if (
     hasValidFootprint &&
@@ -308,459 +295,159 @@ export default function ImpactPanel({
   
 
   return (
-    <aside className="overflow-y-auto border-l border-slate-200 bg-white p-5">
-      {/* ============================================================
-          HEADER
-      ============================================================ */}
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Scenario impact
-          </p>
-
-          <p className="mt-1 text-sm font-medium text-slate-900">
-            Live development footprint
-          </p>
-        </div>
-
-        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-medium text-blue-700">
-          Live
-        </span>
-      </div>
-
-      {/* ============================================================
-          1. SITE ASSESSMENT
-      ============================================================ */}
-      <AssessmentSummary assessment={assessment} />
-      <HazardOverview
-        hazards={footprintHazards}
-        loading={footprintHazardsLoading}
-      />
-
-      <section className="border-t border-slate-100 pt-5">
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Existing site cover
-            </p>
-
-            <p className="mt-1 text-xs text-slate-500">
-              Current mapped surface conditions within the proposed footprint.
-            </p>
-          </div>
-
-          <span className="text-[10px] text-slate-400">
-            ESA WorldCover 2021
-          </span>
-        </div>
-
-        {landCoverLoading ? (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
-            Analysing existing land cover...
-          </div>
-        ) : landCoverError ? (
-          <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-700">
-            Existing land-cover data unavailable.
-          </div>
-        ) : landCoverAnalysis ? (
-          <div className="grid grid-cols-2 gap-2">
-            <LandCoverMetric
-              label="Built-up proxy"
-              value={`${landCoverAnalysis.planning.builtUpPercent.toFixed(0)}%`}
-            />
-
-            <LandCoverMetric
-              label="Vegetated"
-              value={`${landCoverAnalysis.planning.vegetatedPercent.toFixed(0)}%`}
-            />
-
-            <LandCoverMetric
-              label="Water / wetland"
-              value={`${landCoverAnalysis.planning.waterPercent.toFixed(0)}%`}
-            />
-
-            <LandCoverMetric
-              label="Other"
-              value={`${landCoverAnalysis.planning.otherPercent.toFixed(0)}%`}
-            />
-          </div>
-        ) : null}
-      </section>
-
-      {/* ============================================================
-          terrain/elevation 
-      ============================================================ */}
-
-      <section className="border-t border-slate-100 pt-5">
-        <div className="mb-3 flex items-start justify-between">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Terrain context
-            </p>
-
-            <p className="mt-1 text-xs text-slate-500">
-              Elevation and slope around
-              the proposed footprint.
-            </p>
-          </div>
-
-          <span className="text-[9px] text-slate-400">
-            Copernicus DEM
-          </span>
-        </div>
-
-        <TerrainSummary
-          terrain={terrainAnalysis}
-          loading={terrainLoading}
-          error={terrainError}
+    <aside className="h-full overflow-y-auto border-l border-slate-200 bg-white p-4">
+      <div className="space-y-3">
+        {/* ============================================================
+            SCENARIO
+        ============================================================ */}
+        <ImpactScenarioToggle
+          value={simulationView}
+          onChange={setSimulationView}
+          mitigationAvailable={hasMitigation}
         />
-      </section>
 
-      {/* ============================================================
-          2. WHY THIS MATTERS
-          Hazard → Change → Consequence
-      ============================================================ */}
-      <ReasoningSection assessment={assessment} />
+        {/* ============================================================
+            VERDICT
+        ============================================================ */}
+        <VerdictCard
+          assessment={assessment}
+          runoffChangePercent={
+            simulation.runoffChangePercent
+          }
+        />
 
-      {/* ============================================================
-          3. PROPOSED SITE
-      ============================================================ */}
-      <section className="mt-6">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-          Proposed site
-        </p>
+        {/* ============================================================
+            KPIs
+        ============================================================ */}
+        <ImpactKpis
+          runoff={displayedRunoff}
+          mappedHazardCount={mappedHazardCount}
+          tsunamiPresent={tsunamiPresent}
+        />
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <MetricCard
-            label="Project area"
-            value={formatProjectArea(projectAreaHa)}
-          />
+        {/* ============================================================
+            RUNOFF COMPARISON
+        ============================================================ */}
+        <RunoffComparison
+          current={
+            simulation.baselineRunoffPressure
+          }
+          proposed={
+            simulation.scenarioRunoffPressure
+          }
+          mitigated={
+            simulation.mitigatedRunoffPressure
+          }
+          hasMitigation={hasMitigation}
+        />
 
-          <MetricCard
-            label="New occupants"
-            value={`+${additionalPopulation.toLocaleString()}`}
-          />
-
-          <MetricCard
-            label="Impervious"
-            value={formatProjectArea(imperviousAreaHa)}
-          />
-
-          <MetricCard
-            label="Green space"
-            value={formatProjectArea(greenAreaHa)}
-          />
-        </div>
-      </section>
-
-      {/* ============================================================
-          4. LAND ALLOCATION
-      ============================================================ */}
-      <section className="mt-6">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-          Land allocation
-        </p>
-
-        <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-          <div className="flex h-4 w-full">
-            <div
-              className="bg-slate-700 transition-all duration-300"
-              style={{
-                width: `${imperviousPercent}%`,
-              }}
-            />
-
-            <div
-              className="bg-emerald-500 transition-all duration-300"
-              style={{
-                width: `${greenPercent}%`,
-              }}
-            />
-
-            <div
-              className="bg-slate-200 transition-all duration-300"
-              style={{
-                width: `${Math.max(
-                  0,
-                  100 -
-                    imperviousPercent -
-                    greenPercent
-                )}%`,
-              }}
-            />
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 p-3">
-            <AllocationItem
-              label="Impervious"
-              value={`${imperviousPercent}%`}
-            />
-
-            <AllocationItem
-              label="Green"
-              value={`${greenPercent}%`}
-            />
-
-            <AllocationItem
-              label="Other"
-              value={`${Math.max(
-                0,
-                100 -
-                  imperviousPercent -
-                  greenPercent
-              )}%`}
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* ============================================================
-          5. KEY CHANGES
-      ============================================================ */}
-      <section className="mt-6">
-        <div className="flex items-center justify-between">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-            Development change
-          </p>
-
-          <ImpactBadge level={simulation.impactLevel} />
-        </div>
-
-        <div className="mt-3 space-y-3">
-          <ComparisonRow
-            label="Comparative runoff tendency"
-            baseline={simulation.baselineRunoffPressure.toFixed(
-              3
-            )}
-            scenario={simulation.scenarioRunoffPressure.toFixed(
-              3
-            )}
-            change={`${simulation.runoffChangePercent >= 0 ? "+" : ""}${simulation.runoffChangePercent.toFixed(
-              1
-            )}%`}
-            direction={simulation.runoffDirection}
-          />
-
-          <button
-            type="button"
-            onClick={() =>
-              setShowRunoffInfo(
-                (current) => !current
-              )
-            }
-            className="text-[11px] font-medium text-blue-600 hover:text-blue-700"
-          >
-            ⓘ How is the runoff indicator calculated?
-          </button>
-
-          {showRunoffInfo && (
-            <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3">
-              <p className="text-xs font-semibold text-slate-800">
-                Comparative runoff tendency
-              </p>
-
-              <p className="mt-1 text-[11px] leading-5 text-slate-600">
-                This indicator compares how different
-                surface compositions are expected to
-                influence rainfall infiltration and
-                surface runoff generation.
-              </p>
-
-              <div className="mt-3 rounded-lg bg-white p-3">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                  Model
-                </p>
-
-                <p className="mt-2 font-mono text-[11px] leading-5 text-slate-700">
-                  C = I × 0.90
-                  <br />
-                  + G × 0.20
-                  <br />
-                  + O × 0.45
-                </p>
-
-                <div className="mt-2 space-y-1 text-[10px] leading-4 text-slate-500">
-                  <p>I = impervious surface share</p>
-                  <p>G = green / open-space share</p>
-                  <p>O = remaining surface share</p>
-                </div>
-              </div>
-
-              <p className="mt-3 text-[10px] leading-4 text-slate-500">
-                Higher values indicate a surface configuration
-                with greater relative tendency to generate
-                surface runoff.
-              </p>
-
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <RunoffBreakdown
-                  title="Baseline"
-                  impervious={
-                    baselineImperviousPercent
-                  }
-                  green={baselineGreenPercent}
-                  other={baselineOtherPercent}
-                  coefficient={
-                    simulation.baselineRunoffCoefficient
-                  }
-                />
-
-                <RunoffBreakdown
-                  title="Proposed"
-                  impervious={imperviousPercent}
-                  green={greenPercent}
-                  other={scenarioOtherPercent}
-                  coefficient={
-                    simulation.scenarioRunoffCoefficient
-                  }
-                />
-              </div>
-
-              <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-                <p className="text-[10px] text-slate-400">
-                  Development-induced change
-                </p>
-
-                <p className="mt-1 text-sm font-semibold text-slate-800">
-                  {simulation.runoffChangePercent >= 0
-                    ? "+"
-                    : ""}
-                  {simulation.runoffChangePercent.toFixed(
-                    1
-                  )}
-                  %
-                </p>
-              </div>
-
-              <p className="mt-3 text-[10px] leading-4 text-slate-400">
-                This is a comparative planning indicator
-                based on simplified surface coefficients.
-                It is not a prediction of runoff volume,
-                flood depth, discharge, or flood probability.
-                Hazard exposure is assessed separately using
-                mapped BNPB data.
-              </p>
-            </div>
-          )}
-
-          <ComparisonRow
-            label="Impervious surface"
-            baseline={`${baselineImperviousPercent.toFixed(
-              0
-            )}%`}
-            scenario={`${imperviousPercent}%`}
-            change={`${
-              imperviousPercent -
-                baselineImperviousPercent >=
-              0
-                ? "+"
-                : ""
-            }${(
-              imperviousPercent -
-              baselineImperviousPercent
-            ).toFixed(0)} pp`}
-            direction={
-              imperviousPercent >
-              baselineImperviousPercent
-                ? "higher"
-                : imperviousPercent <
-                    baselineImperviousPercent
-                  ? "lower"
-                  : "similar"
-            }
-          />
-
-          <ComparisonRow
-            label="Green / open space"
-            baseline={`${baselineGreenPercent.toFixed(
-              0
-            )}%`}
-            scenario={`${greenPercent}%`}
-            change={`${
-              greenPercent -
-                baselineGreenPercent >=
-              0
-                ? "+"
-                : ""
-            }${(
-              greenPercent -
-              baselineGreenPercent
-            ).toFixed(0)} pp`}
-            direction={
-              greenPercent >
-              baselineGreenPercent
-                ? "lower"
-                : greenPercent <
-                    baselineGreenPercent
-                  ? "higher"
-                  : "similar"
-            }
-          />
-
-          {simulation.baselinePopulation !==
-            null &&
-            simulation.scenarioPopulation !==
-              null && (
-              <ComparisonRow
-                label="Population exposure"
-                baseline={Math.round(
-                  simulation.baselinePopulation
-                ).toLocaleString()}
-                scenario={Math.round(
-                  simulation.scenarioPopulation
-                ).toLocaleString()}
-                change={`+${simulation.populationChange.toLocaleString()}`}
-                direction={
-                  simulation.populationChange > 0
-                    ? "higher"
-                    : simulation.populationChange <
-                        0
-                      ? "lower"
-                      : "similar"
-                }
-              />
-            )}
-        </div>
-      </section>
-
-      {/* ============================================================
-          6. SITE EVIDENCE
-          Collapsed by default
-      ============================================================ */}
-      <section className="mt-6 border-t border-slate-100 pt-5">
-        <button
-          type="button"
-          onClick={() =>
-            setShowEvidence(
-              (current) => !current
+        {/* ============================================================
+            EVIDENCE
+        ============================================================ */}
+        <ImpactAccordion
+          title="Evidence"
+          open={openSection === "evidence"}
+          onToggle={() =>
+            setOpenSection(
+              openSection === "evidence"
+                ? null
+                : "evidence"
             )
           }
-          className="flex w-full items-center justify-between gap-3 text-left"
         >
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-              Site evidence
-            </p>
-
-            <p className="mt-1 text-xs text-slate-500">
-              Baseline context and mapped hazard
-              samples
-            </p>
-          </div>
-
-          <span className="shrink-0 text-xs font-medium text-slate-400">
-            {showEvidence ? "Hide ↑" : "Show ↓"}
-          </span>
-        </button>
-
-        {showEvidence && (
-          <div className="mt-4 space-y-5">
-            {/* -------------------------------------------------------
-                Baseline context
-            ------------------------------------------------------- */}
+          <div className="space-y-5">
+            {/* EXISTING SITE COVER */}
             <div>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Existing site cover
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Current mapped surface conditions
+                    within the proposed footprint.
+                  </p>
+                </div>
+
+                <span className="text-[9px] text-slate-400">
+                  ESA WorldCover 2021
+                </span>
+              </div>
+
+              <div className="mt-3">
+                {landCoverLoading ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
+                    Analysing existing land cover...
+                  </div>
+                ) : landCoverError ? (
+                  <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-700">
+                    Existing land-cover data unavailable.
+                  </div>
+                ) : landCoverAnalysis ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <LandCoverMetric
+                      label="Built-up proxy"
+                      value={`${landCoverAnalysis.planning.builtUpPercent.toFixed(
+                        0
+                      )}%`}
+                    />
+
+                    <LandCoverMetric
+                      label="Vegetated"
+                      value={`${landCoverAnalysis.planning.vegetatedPercent.toFixed(
+                        0
+                      )}%`}
+                    />
+
+                    <LandCoverMetric
+                      label="Water / wetland"
+                      value={`${landCoverAnalysis.planning.waterPercent.toFixed(
+                        0
+                      )}%`}
+                    />
+
+                    <LandCoverMetric
+                      label="Other"
+                      value={`${landCoverAnalysis.planning.otherPercent.toFixed(
+                        0
+                      )}%`}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            {/* TERRAIN */}
+            <div className="border-t border-slate-100 pt-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Terrain context
+                  </p>
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    Elevation and slope around the
+                    proposed footprint.
+                  </p>
+                </div>
+
+                <span className="text-[9px] text-slate-400">
+                  Copernicus DEM
+                </span>
+              </div>
+
+              <TerrainSummary
+                terrain={terrainAnalysis}
+                loading={terrainLoading}
+                error={terrainError}
+              />
+            </div>
+
+            {/* SURROUNDING CONTEXT */}
+            <div className="border-t border-slate-100 pt-4">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   Surrounding context
                 </p>
 
@@ -771,10 +458,13 @@ export default function ImpactPanel({
                         key={radius}
                         type="button"
                         onClick={() =>
-                          setAnalysisRadiusMeters(radius)
+                          setAnalysisRadiusMeters(
+                            radius
+                          )
                         }
                         className={`rounded-md px-2 py-1 text-[10px] font-medium transition ${
-                          analysisRadiusMeters === radius
+                          analysisRadiusMeters ===
+                          radius
                             ? "bg-white text-slate-900 shadow-sm"
                             : "text-slate-500 hover:text-slate-700"
                         }`}
@@ -788,35 +478,18 @@ export default function ImpactPanel({
                 </div>
               </div>
 
-              {baseline.status === "idle" && (
-                <div className="mt-2 rounded-xl border border-dashed border-slate-300 p-3">
-                  <p className="text-xs text-slate-500">
-                    Define a project footprint to load surrounding conditions.
-                  </p>
-                </div>
-              )}
-
-              {baseline.status === "loading" && (
-                <div className="mt-2 rounded-xl border border-slate-200 p-3">
-                  <p className="text-xs text-slate-500">
-                    Loading site context...
-                  </p>
-
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full w-1/2 animate-pulse rounded-full bg-slate-300" />
-                  </div>
-                </div>
+              {baseline.status ===
+                "loading" && (
+                <p className="mt-3 text-xs text-slate-500">
+                  Loading surrounding context...
+                </p>
               )}
 
               {baseline.status ===
                 "success" && (
-                <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="mt-3 grid grid-cols-2 gap-2">
                   <MetricCard
-                    label={`Population · ${
-                      analysisRadiusMeters === 1000
-                        ? "1 km"
-                        : `${analysisRadiusMeters} m`
-                    }`}
+                    label="Population"
                     value={
                       baseline.population !== null
                         ? Math.round(
@@ -859,33 +532,24 @@ export default function ImpactPanel({
                         : "No data"
                     }
                   />
-
-                  <p className="mt-2 text-[10px] leading-4 text-slate-400">
-                    Context radius is measured from the
-                    center of the proposed project footprint.
-                  </p>
                 </div>
               )}
 
               {baseline.status === "error" && (
-                <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50 p-3">
-                  <p className="text-xs text-amber-700">
-                    Baseline context temporarily
-                    unavailable.
-                  </p>
-                </div>
+                <p className="mt-3 text-xs text-amber-700">
+                  Surrounding context temporarily
+                  unavailable.
+                </p>
               )}
             </div>
 
-            {/* -------------------------------------------------------
-                Hazard overlap
-            ------------------------------------------------------- */}
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+            {/* FOOTPRINT HAZARDS */}
+            <div className="border-t border-slate-100 pt-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Footprint hazard samples
               </p>
 
-              <div className="mt-2 space-y-2">
+              <div className="mt-3 space-y-2">
                 {(
                   [
                     "flood",
@@ -895,6 +559,9 @@ export default function ImpactPanel({
                 ).map((hazardKey) => {
                   const hazard =
                     footprintHazards[hazardKey];
+
+                  const status =
+                    getHazardStatus(hazard);
 
                   const label = {
                     flood: "Flood",
@@ -907,95 +574,69 @@ export default function ImpactPanel({
                       key={hazardKey}
                       className="rounded-xl border border-slate-200 p-3"
                     >
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center justify-between">
                         <p className="text-xs font-medium text-slate-800">
                           {label}
                         </p>
 
-                        {footprintHazardsLoading && (
-                          <span className="text-[10px] text-slate-400">
-                            Analysing…
-                          </span>
-                        )}
+                        <span
+                          className={`text-[10px] font-medium ${
+                            status === "hazard-present"
+                              ? "text-amber-700"
+                              : status === "no-hazard"
+                              ? "text-emerald-700"
+                              : "text-slate-400"
+                          }`}
+                        >
+                          {status === "hazard-present"
+                            ? "Hazard mapped"
+                            : status === "no-hazard"
+                            ? "No hazard value"
+                            : status === "no-data"
+                            ? "No mapped data"
+                            : "Unavailable"}
+                        </span>
                       </div>
 
-                      {!footprintHazardsLoading &&
-                      hazard ? (
-                        hazard.validSamples > 0 ? (
-                          <>
-                            <div className="mt-3 grid grid-cols-3 gap-2">
-                              <div>
-                                <p className="text-[10px] uppercase text-slate-400">
-                                  Mapped
-                                </p>
+                      {hazard &&
+                        hazard.validSamples > 0 && (
+                          <div className="mt-2 grid grid-cols-3 gap-2 text-[10px]">
+                            <div>
+                              <p className="text-slate-400">
+                                Samples
+                              </p>
 
-                                <p className="mt-1 text-sm font-semibold text-slate-800">
-                                  {
-                                    hazard.validSamples
-                                  }
-                                  /
-                                  {
-                                    hazard.totalSamples
-                                  }
-                                </p>
-                              </div>
-
-                              <div>
-                                <p className="text-[10px] uppercase text-slate-400">
-                                  Average
-                                </p>
-
-                                <p className="mt-1 text-sm font-semibold text-slate-800">
-                                  {hazard.average !==
-                                  null
-                                    ? hazard.average.toFixed(
-                                        3
-                                      )
-                                    : "—"}
-                                </p>
-                              </div>
-
-                              <div>
-                                <p className="text-[10px] uppercase text-slate-400">
-                                  Maximum
-                                </p>
-
-                                <p className="mt-1 text-sm font-semibold text-slate-800">
-                                  {hazard.maximum !==
-                                  null
-                                    ? hazard.maximum.toFixed(
-                                        3
-                                      )
-                                    : "—"}
-                                </p>
-                              </div>
+                              <p className="mt-1 font-semibold text-slate-700">
+                                {hazard.validSamples}/
+                                {hazard.totalSamples}
+                              </p>
                             </div>
 
-                            <p className="mt-2 text-[10px] leading-4 text-slate-400">
-                              {
-                                hazard.validSamples
-                              }{" "}
-                              of{" "}
-                              {
-                                hazard.totalSamples
-                              }{" "}
-                              sampled locations
-                              returned mapped values.
-                            </p>
-                          </>
-                        ) : (
-                          <p className="mt-2 text-xs text-slate-500">
-                            No mapped value returned
-                            within the sampled
-                            footprint.
-                          </p>
-                        )
-                      ) : !footprintHazardsLoading ? (
-                        <p className="mt-2 text-xs text-slate-500">
-                          Hazard data unavailable for
-                          this footprint.
-                        </p>
-                      ) : null}
+                            <div>
+                              <p className="text-slate-400">
+                                Average
+                              </p>
+
+                              <p className="mt-1 font-semibold text-slate-700">
+                                {hazard.average !== null
+                                  ? hazard.average.toFixed(3)
+                                  : "—"}
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="text-slate-400">
+                                Maximum
+                              </p>
+
+                              <p className="mt-1 font-semibold text-slate-700">
+                                {hazard.maximum !== null
+                                  ? hazard.maximum.toFixed(3)
+                                  : "—"}
+                              </p>
+                            </div>
+                          </div>
+                        )}
                     </div>
                   );
                 })}
@@ -1005,271 +646,240 @@ export default function ImpactPanel({
                 Sample counts indicate where mapped
                 raster values were returned. They do
                 not represent the percentage of the
-                site affected by a hazard.
+                project affected.
               </p>
             </div>
+
+            {/* REASONING */}
+            <div className="border-t border-slate-100 pt-4">
+              <ReasoningSection
+                assessment={assessment}
+              />
+            </div>
           </div>
-        )}
-      </section>
+        </ImpactAccordion>
 
-
-
-      {/* ============================================================
-          7. PLANNING RESPONSE
-      ============================================================ */}
-      <section className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-          Planning response
-        </p>
-
-        <div className="mt-3 space-y-3">
-          {assessment.responses.map(
-            (response, index) => (
-              <div
-                key={index}
-                className="flex gap-2"
-              >
-                <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
-
-                <p className="text-xs leading-5 text-slate-700">
-                  {response}
-                </p>
-              </div>
+        {/* ============================================================
+            METHOD
+        ============================================================ */}
+        <ImpactAccordion
+          title="Method and assumptions"
+          open={openSection === "method"}
+          onToggle={() =>
+            setOpenSection(
+              openSection === "method"
+                ? null
+                : "method"
             )
-          )}
-        </div>
-      </section>
-
-      {/* ============================================================
-          8. DESIGN RESPONSE / MITIGATION
-      ============================================================ */}
-
-      <section className="mt-6">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-              Design response
-            </p>
-
-            <p className="mt-1 text-xs text-slate-500">
-              Compare the proposed design with the mitigated scenario.
-            </p>
-          </div>
-
-          {simulation.mitigationReductionPercent > 0 && (
-            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-medium text-emerald-700">
-              -{simulation.mitigationReductionPercent.toFixed(1)}%
-            </span>
-          )}
-        </div>
-
-        {permeableSurfacePercent === 0 &&
-        greenInfrastructurePercent === 0 &&
-        retentionLevel === "none" ? (
-          <div className="mt-3 rounded-xl border border-dashed border-slate-300 p-3">
-            <p className="text-xs font-medium text-slate-700">
-              No mitigation applied
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              Add permeable replacement, green infrastructure,
-              or stormwater retention to compare the proposed
-              design with an improved scenario.
-            </p>
-          </div>
-        ) : (
-          <div className="mt-3 space-y-4">
-            {/* Result */}
-            <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-700">
-                Resulting runoff tendency
+          }
+        >
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-slate-800">
+                Comparative runoff tendency
               </p>
 
-              <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                <div>
-                  <p className="text-[10px] uppercase tracking-wide text-slate-400">
-                    Proposed
-                  </p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">
+                Surface composition is converted into
+                a comparative runoff coefficient.
+              </p>
+            </div>
 
-                  <p className="mt-1 text-lg font-semibold text-slate-900">
-                    {simulation.scenarioRunoffPressure.toFixed(3)}
-                  </p>
-                </div>
+            <div className="rounded-xl bg-slate-50 p-3">
+              <p className="font-mono text-xs leading-5 text-slate-700">
+                C = I × 0.90
+                <br />
+                + G × 0.20
+                <br />
+                + O × 0.45
+              </p>
 
-                <div className="text-slate-300">
-                  →
-                </div>
-
-                <div className="text-right">
-                  <p className="text-[10px] uppercase tracking-wide text-slate-400">
-                    Mitigated
-                  </p>
-
-                  <p className="mt-1 text-lg font-semibold text-emerald-700">
-                    {simulation.mitigatedRunoffPressure.toFixed(3)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-3 border-t border-emerald-100 pt-3">
-                <p className="text-xs text-slate-600">
-                  Comparative runoff tendency decreases by{" "}
-                  <span className="font-semibold text-emerald-700">
-                    {simulation.mitigationReductionPercent.toFixed(1)}%
-                  </span>{" "}
-                  relative to the proposed design.
-                </p>
+              <div className="mt-2 space-y-1 text-[10px] text-slate-500">
+                <p>I = impervious surface</p>
+                <p>G = green / open space</p>
+                <p>O = other surface</p>
               </div>
             </div>
 
-            {/* Selected interventions */}
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <RunoffBreakdown
+                title="Current"
+                impervious={
+                  baselineImperviousPercent
+                }
+                green={baselineGreenPercent}
+                other={baselineOtherPercent}
+                coefficient={
+                  simulation.baselineRunoffCoefficient
+                }
+              />
+
+              <RunoffBreakdown
+                title="Proposed"
+                impervious={imperviousPercent}
+                green={greenPercent}
+                other={scenarioOtherPercent}
+                coefficient={
+                  simulation.scenarioRunoffCoefficient
+                }
+              />
+            </div>
+
+            <div className="rounded-xl border border-amber-100 bg-amber-50 p-3">
+              <p className="text-[10px] leading-5 text-amber-800">
+                This is a comparative planning
+                indicator based on simplified surface
+                coefficients. It is not a prediction
+                of runoff volume, discharge, flood
+                depth, or flood probability.
+              </p>
+            </div>
+
+            <div className="border-t border-slate-100 pt-3">
               <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                Selected interventions
+                Data sources
+              </p>
+
+              <div className="mt-2 space-y-1 text-[10px] leading-5 text-slate-500">
+                <p>BNPB InaRISK · hazard context</p>
+                <p>ESA WorldCover 2021 · land cover</p>
+                <p>Copernicus DEM GLO-30 · terrain</p>
+                <p>WorldPop 2025 · population context</p>
+              </div>
+            </div>
+          </div>
+        </ImpactAccordion>
+
+        {/* ============================================================
+            RECOMMENDATIONS
+        ============================================================ */}
+        <ImpactAccordion
+          title="Recommendations"
+          open={
+            openSection ===
+            "recommendations"
+          }
+          onToggle={() =>
+            setOpenSection(
+              openSection ===
+                "recommendations"
+                ? null
+                : "recommendations"
+            )
+          }
+        >
+          <div className="space-y-4">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Recommended next step
+              </p>
+
+              <p className="mt-2 text-xs leading-5 text-slate-700">
+                {assessment.recommendedAction}
+              </p>
+            </div>
+
+            <div className="border-t border-slate-100 pt-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Planning response
               </p>
 
               <div className="mt-3 space-y-3">
-                {permeableSurfacePercent > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-medium text-slate-800">
-                        Permeable replacement
-                      </p>
+                {assessment.responses
+                  .slice(0, 3)
+                  .map(
+                    (response, index) => (
+                      <div
+                        key={index}
+                        className="flex gap-2"
+                      >
+                        <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
 
-                      <span className="text-xs font-semibold text-slate-700">
-                        {permeableSurfacePercent}%
-                      </span>
-                    </div>
-
-                    <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                      {simulation.permeableTreatedSitePercent.toFixed(1)}%
-                      of the total site is treated by replacing part
-                      of the proposed impervious surface.
-                    </p>
-                  </div>
-                )}
-
-                {greenInfrastructurePercent > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-medium text-slate-800">
-                        Green infrastructure treatment
-                      </p>
-
-                      <span className="text-xs font-semibold text-slate-700">
-                        {greenInfrastructurePercent}%
-                      </span>
-                    </div>
-
-                    <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                      Represents stormwater-management features such as
-                      rain gardens, bioswales, and vegetated drainage.
-                    </p>
-                  </div>
-                )}
-
-                {retentionLevel !== "none" && (
-                  <div>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs font-medium text-slate-800">
-                        Stormwater retention
-                      </p>
-
-                      <span className="text-xs font-semibold capitalize text-slate-700">
-                        {retentionLevel}
-                      </span>
-                    </div>
-
-                    <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                      Provides temporary storage that reduces the
-                      remaining comparative runoff tendency.
-                    </p>
-                  </div>
-                )}
+                        <p className="text-xs leading-5 text-slate-700">
+                          {response}
+                        </p>
+                      </div>
+                    )
+                  )}
               </div>
             </div>
 
-            {/* Intervention effect */}
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                Intervention effect
-              </p>
-
-              <div className="mt-3 space-y-2">
-                {permeableSurfacePercent > 0 && (
-                  <MitigationEffectRow
-                    label="Permeable replacement"
-                    value={simulation.permeableReductionPercent}
-                  />
-                )}
-
-                {greenInfrastructurePercent > 0 && (
-                  <MitigationEffectRow
-                    label="Green infrastructure"
-                    value={
-                      simulation.greenInfrastructureReductionPercent
-                    }
-                  />
-                )}
-
-                {retentionLevel !== "none" && (
-                  <MitigationEffectRow
-                    label="Retention"
-                    value={simulation.retentionReductionPercent}
-                  />
-                )}
-              </div>
-
-              <div className="mt-3 border-t border-slate-100 pt-3">
-                <div className="flex items-center justify-between gap-3">
+            <div className="border-t border-slate-100 pt-4">
+              {!hasMitigation ? (
+                <div className="rounded-xl border border-dashed border-slate-300 p-3">
                   <p className="text-xs font-medium text-slate-700">
-                    Combined reduction
+                    No mitigation applied
                   </p>
 
-                  <p className="text-sm font-semibold text-emerald-700">
-                    -{simulation.mitigationReductionPercent.toFixed(1)}%
+                  <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                    Add permeable replacement, green
+                    infrastructure, or stormwater
+                    retention to compare an improved
+                    scenario.
                   </p>
                 </div>
-              </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-slate-700">
+                      Proposed → mitigated runoff
+                    </p>
 
-              <p className="mt-3 text-[10px] leading-4 text-slate-400">
-                Intervention effects are applied sequentially, so
-                individual reductions should not be interpreted as
-                independent values that simply add together.
-              </p>
-            </div>
+                    <p className="text-xs font-semibold text-emerald-700">
+                      -
+                      {simulation.mitigationReductionPercent.toFixed(
+                        1
+                      )}
+                      %
+                    </p>
+                  </div>
 
-            {/* Transparency / explanation */}
-            <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-blue-700">
-                How mitigation is applied
-              </p>
+                  <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-xl bg-slate-50 p-3">
+                    <div>
+                      <p className="text-[10px] text-slate-400">
+                        Proposed
+                      </p>
 
-              <div className="mt-2 space-y-1 text-[10px] leading-4 text-slate-600">
-                <p>
-                  1. Permeable replacement converts part of the
-                  proposed impervious surface to a lower-runoff surface.
-                </p>
+                      <p className="mt-1 text-sm font-semibold">
+                        {simulation.scenarioRunoffPressure.toFixed(
+                          3
+                        )}
+                      </p>
+                    </div>
 
-                <p>
-                  2. Green infrastructure reduces the runoff tendency
-                  remaining after surface treatment.
-                </p>
+                    <span className="text-slate-300">
+                      →
+                    </span>
 
-                <p>
-                  3. Retention reduces the remaining tendency through
-                  temporary runoff storage.
-                </p>
-              </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-slate-400">
+                        Mitigated
+                      </p>
 
-              <p className="mt-3 text-[10px] leading-4 text-slate-400">
-                These are comparative planning assumptions, not
-                calibrated predictions of runoff volume or flood depth.
-              </p>
+                      <p className="mt-1 text-sm font-semibold text-emerald-700">
+                        {simulation.mitigatedRunoffPressure.toFixed(
+                          3
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
-        )}
-      </section>
+        </ImpactAccordion>
+
+        {/* ============================================================
+            EXPORT
+        ============================================================ */}
+        <button
+          type="button"
+          disabled
+          className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Export report
+        </button>
+      </div>
     </aside>
   );
 }
@@ -1291,202 +901,6 @@ function MetricCard({
         {value}
       </p>
     </div>
-  );
-}
-
-function AllocationItem({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div>
-      <p className="text-[10px] text-slate-400">
-        {label}
-      </p>
-
-      <p className="mt-1 text-xs font-semibold text-slate-700">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function ComparisonRow({
-  label,
-  baseline,
-  scenario,
-  change,
-  direction,
-}: {
-  label: string;
-  baseline: string;
-  scenario: string;
-  change: string;
-  direction?: "lower" | "similar" | "higher";
-}) {
-  const changeStyle =
-    direction === "higher"
-      ? "text-amber-700 bg-amber-50"
-      : direction === "lower"
-        ? "text-emerald-700 bg-emerald-50"
-        : "text-slate-600 bg-slate-100";
-
-  return (
-    <div className="rounded-xl border border-slate-200 p-3">
-      <p className="text-xs font-medium text-slate-700">
-        {label}
-      </p>
-
-      <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-slate-400">
-            Baseline
-          </p>
-
-          <p className="mt-1 text-lg font-semibold text-slate-800">
-            {baseline}
-          </p>
-        </div>
-
-        <span className="text-slate-300">
-          →
-        </span>
-
-        <div className="text-right">
-          <p className="text-[10px] uppercase tracking-wide text-slate-400">
-            Scenario
-          </p>
-
-          <p className="mt-1 text-lg font-semibold text-slate-900">
-            {scenario}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-3 flex justify-end">
-        <span
-          className={`rounded-full px-2 py-1 text-[10px] font-medium ${changeStyle}`}
-        >
-          {change}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function ImpactBadge({
-  level,
-}: {
-  level: "low" | "moderate" | "high";
-}) {
-  const styles = {
-    low: "bg-emerald-50 text-emerald-700",
-    moderate: "bg-amber-50 text-amber-700",
-    high: "bg-red-50 text-red-700",
-  };
-
-  return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${styles[level]}`}
-    >
-      {level.charAt(0).toUpperCase() +
-        level.slice(1)}
-    </span>
-  );
-}
-
-function formatProjectArea(areaHa: number) {
-  const areaM2 = areaHa * 10_000;
-
-  if (areaM2 < 10_000) {
-    return `${Math.round(areaM2).toLocaleString()} m²`;
-  }
-
-  return `${areaHa.toFixed(2)} ha`;
-}
-
-function AssessmentSummary({
-  assessment,
-}: {
-  assessment: PlanningAssessment;
-}) {
-  const statusStyle = {
-    low: {
-      label: "Lower concern",
-      badge:
-        "bg-emerald-50 text-emerald-700",
-      border:
-        "border-emerald-100",
-    },
-
-    attention: {
-      label: "Attention",
-      badge:
-        "bg-amber-50 text-amber-700",
-      border:
-        "border-amber-100",
-    },
-
-    review: {
-      label: "Review",
-      badge:
-        "bg-red-50 text-red-700",
-      border:
-        "border-red-100",
-    },
-  }[assessment.status];
-
-  return (
-    <section
-      className={`mt-5 rounded-2xl border bg-slate-50 p-4 ${statusStyle.border}`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-            Site assessment
-          </p>
-
-          <p className="mt-2 text-base font-semibold leading-6 text-slate-900">
-            {assessment.headline}
-          </p>
-        </div>
-
-        <span
-          className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium ${statusStyle.badge}`}
-        >
-          {statusStyle.label}
-        </span>
-      </div>
-
-      <p className="mt-3 text-xs leading-5 text-slate-600">
-        {assessment.summary}
-      </p>
-
-      <div className="mt-4 grid gap-2">
-        <div className="rounded-xl bg-white p-3">
-          <p className="text-[10px] uppercase tracking-wide text-slate-400">
-            Primary concern
-          </p>
-
-          <p className="mt-1 text-xs font-semibold leading-5 text-slate-800">
-            {assessment.primaryConcern}
-          </p>
-        </div>
-
-        <div className="rounded-xl bg-white p-3">
-          <p className="text-[10px] uppercase tracking-wide text-slate-400">
-            Recommended next step
-          </p>
-
-          <p className="mt-1 text-xs leading-5 text-slate-700">
-            {assessment.recommendedAction}
-          </p>
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -1653,74 +1067,6 @@ function EmptyStep({
   );
 }
 
-function HazardOverview({
-  hazards,
-  loading,
-}: {
-  hazards: FootprintHazards;
-  loading: boolean;
-}) {
-  const items = [
-    {
-      key: "flood",
-      label: "Flood",
-    },
-    {
-      key: "tsunami",
-      label: "Tsunami",
-    },
-    {
-      key: "landslide",
-      label: "Landslide",
-    },
-  ] as const;
-
-  return (
-    <section className="mt-5">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-        Hazard context
-      </p>
-
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        {items.map(({ key, label }) => {
-          const hazard = hazards[key];
-
-          const mapped =
-            hazard !== null &&
-            hazard.validSamples > 0;
-
-          return (
-            <div
-              key={key}
-              className="rounded-xl border border-slate-200 bg-white p-3"
-            >
-              <p className="text-[10px] text-slate-400">
-                {label}
-              </p>
-
-              <p
-                className={`mt-1 text-xs font-semibold ${
-                  loading
-                    ? "text-slate-400"
-                    : mapped
-                      ? "text-amber-700"
-                      : "text-slate-500"
-                }`}
-              >
-                {loading
-                  ? "Checking…"
-                  : mapped
-                    ? "Mapped"
-                    : "No mapped value"}
-              </p>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
 function LoadingRow({
   label,
 }: {
@@ -1743,26 +1089,6 @@ function LoadingRow({
   );
 }
 
-function MitigationEffectRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: number;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <p className="text-xs text-slate-600">
-        {label}
-      </p>
-
-      <p className="text-xs font-semibold text-emerald-700">
-        -{value.toFixed(1)}%
-      </p>
-    </div>
-  );
-}
-
 function LandCoverMetric({
   label,
   value,
@@ -1779,6 +1105,67 @@ function LandCoverMetric({
       <p className="mt-1 text-base font-semibold text-slate-900">
         {value}
       </p>
+    </div>
+  );
+}
+
+function EmptyWorkflowStep({
+  number,
+  title,
+  description,
+  active = false,
+  last = false,
+}: {
+  number: string;
+  title: string;
+  description: string;
+  active?: boolean;
+  last?: boolean;
+}) {
+  return (
+    <div className="relative flex gap-3">
+      {/* Step rail */}
+      <div className="flex flex-col items-center">
+        <div
+          className={`
+            flex h-7 w-7 shrink-0
+            items-center justify-center
+            rounded-full
+            text-[10px] font-semibold
+            ${
+              active
+                ? "bg-blue-600 text-white"
+                : "bg-slate-100 text-slate-400"
+            }
+          `}
+        >
+          {number}
+        </div>
+
+        {!last && (
+          <div className="my-1 h-10 w-px bg-slate-200" />
+        )}
+      </div>
+
+      {/* Step content */}
+      <div className={last ? "pb-0" : "pb-4"}>
+        <p
+          className={`
+            text-xs font-semibold
+            ${
+              active
+                ? "text-slate-900"
+                : "text-slate-500"
+            }
+          `}
+        >
+          {title}
+        </p>
+
+        <p className="mt-1 max-w-[260px] text-[10px] leading-4 text-slate-400">
+          {description}
+        </p>
+      </div>
     </div>
   );
 }

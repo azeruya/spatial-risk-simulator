@@ -1,6 +1,6 @@
 export default function Loading() {
   return (
-    <main className="h-[calc(100vh-73px)]">
+    <main className="h-[calc(100vh-64px)]">
       <div className="flex h-full">
         {/* Sidebar skeleton */}
         <aside className="w-80 shrink-0 border-r border-slate-200 bg-white p-5">

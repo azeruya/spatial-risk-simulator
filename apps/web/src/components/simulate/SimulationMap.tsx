@@ -6,9 +6,10 @@ import Map, { Layer, Marker, Source, MapRef} from "react-map-gl/maplibre";
 import { setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import { SimulationView, FootprintMode, DrawShape } from "@/types/simulation";
-import { createRectangleFootprint } from "@/lib/geometry";
-
+import { SimulationView, FootprintMode, DrawShape, HazardKey, HazardOverlay, MapView } from "@/types/simulation";
+import MapTopBar from "./MapTopBar";
+import MapLegend from "./map/MapLegend";
+import { STREET_STYLE, createSatelliteStyle } from "./map/mapStyles";
 import { TerraDraw, TerraDrawPolygonMode, TerraDrawRectangleMode } from "terra-draw";
 import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
 import bbox from "@turf/bbox";
@@ -18,11 +19,6 @@ import { featureCollection } from "@turf/helpers";
 import intersect from "@turf/intersect";
 
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
-
-type MapView =
-  | "map"
-  | "satellite"
-  | "terrain";
 
 export type SelectedSite = {
   longitude: number;
@@ -67,11 +63,11 @@ type SimulationMapProps = {
   permeableSurfacePercent: number;
   greenInfrastructurePercent: number;
 
-retentionLevel:
-  | "none"
-  | "low"
-  | "moderate"
-  | "high";
+  retentionLevel:
+    | "none"
+    | "low"
+    | "moderate"
+    | "high";
 
   simulationView: SimulationView;
   setSimulationView: (value: SimulationView) => void;
@@ -80,7 +76,9 @@ retentionLevel:
   mitigatedRunoffPressure: number;
   mitigationReductionPercent: number;
   baselineRunoffPressure: number;
+
   hazardMapped: Record<HazardKey, boolean>;
+  hazardPresent: Record<HazardKey, boolean>;
 
   hazardOverlay: HazardOverlay;
   setHazardOverlay: (
@@ -88,15 +86,6 @@ retentionLevel:
   ) => void;
   layoutVersion: string;
 };
-
-type HazardKey =
-  | "flood"
-  | "tsunami"
-  | "landslide";
-
-type HazardOverlay = HazardKey | null;
-
-type HazardMapped = Record<HazardKey, boolean>;
 
 const HAZARD_STYLE = {
   flood: {
@@ -168,31 +157,16 @@ export default function SimulationMap({
   baselineRunoffPressure,
 
   hazardMapped,
+  hazardPresent,
 
   hazardOverlay,
   setHazardOverlay,
   layoutVersion
 }: SimulationMapProps) {
-  /*
-   * Convert hectares into the radius of an equivalent circle.
-   *
-   * 1 hectare = 10,000 m²
-   *
-   * area = πr²
-   * r = √(area / π)
-   */
-
-  const footprintRadiusMeters = useMemo(() => {
-    const areaM2 = projectAreaHa * 10_000;
-
-    return Math.sqrt(areaM2 / Math.PI);
-  }, [projectAreaHa]);
-
   const hasMitigation =
     permeableSurfacePercent > 0 ||
     greenInfrastructurePercent > 0 ||
     retentionLevel !== "none";
-
 
   const [mapView, setMapView] =
     useState<MapView>("satellite");
@@ -207,26 +181,25 @@ export default function SimulationMap({
       case "current":
         return {
           fillColor: "#64748b",
-          fillOpacity: 0.025,
-          lineColor: "#ffffff",
+          fillOpacity: 0.06,
+          lineColor: "#64748b",
           lineWidth: 2,
-          lineDasharray: [2, 2] as number[],
+          lineDasharray: [3, 2] as number[],
         };
 
       case "mitigated":
         return {
           fillColor: "#10b981",
-          fillOpacity: 0.08,
+          fillOpacity: 0.12,
           lineColor: "#059669",
           lineWidth: 3,
           lineDasharray: undefined,
         };
 
       case "proposed":
-      default:
         return {
           fillColor: "#2563eb",
-          fillOpacity: 0.08,
+          fillOpacity: 0.12,
           lineColor: "#2563eb",
           lineWidth: 3,
           lineDasharray: undefined,
@@ -237,6 +210,11 @@ export default function SimulationMap({
   const selectedHazardHasData =
     hazardOverlay
       ? hazardMapped[hazardOverlay]
+      : false;
+
+  const selectedHazardPresent =
+    hazardOverlay
+      ? hazardPresent[hazardOverlay]
       : false;
 
   const hazardOverlayBounds =
@@ -294,6 +272,19 @@ export default function SimulationMap({
     hazardMapped,
   ]);
 
+  const mapSourceLabel =
+  hazardOverlay === "flood"
+    ? "BNPB InaRISK · Flood hazard"
+    : hazardOverlay === "tsunami"
+      ? "BNPB InaRISK · Tsunami hazard"
+      : hazardOverlay === "landslide"
+        ? "BNPB InaRISK · Landslide hazard"
+        : mapView === "terrain"
+          ? "Copernicus DEM GLO-30"
+          : mapView === "satellite"
+            ? "Esri World Imagery"
+            : "CARTO · OpenStreetMap";
+
   const analysisMask = useMemo(() => {
     if (!analysisCircle) return null;
 
@@ -328,7 +319,6 @@ export default function SimulationMap({
       return null;
     }
   }, [analysisCircle]);
-
 
   const surfaceAllocation =
     useMemo(() => {
@@ -560,7 +550,8 @@ export default function SimulationMap({
   ]);
 
   useEffect(() => {
-    const map = mapRef.current?.getMap();
+    const map =
+      mapRef.current?.getMap();
 
     if (!map) return;
 
@@ -575,13 +566,12 @@ export default function SimulationMap({
 
       map.setTerrain({
         source: "terrain-dem",
-        exaggeration: 1.5,
+        exaggeration: 1.25,
       });
 
       map.easeTo({
-        pitch: 60,
-        bearing: -18,
-        duration: 700,
+        pitch: 55,
+        duration: 500,
       });
     };
 
@@ -590,26 +580,33 @@ export default function SimulationMap({
 
       map.easeTo({
         pitch: 0,
-        bearing: 0,
-        duration: 600,
+        duration: 400,
       });
     };
 
-    if (!map.isStyleLoaded()) {
-      map.once("load", () => {
-        if (mapView === "terrain") {
-          enableTerrain();
-        }
-      });
+    const applyTerrainState = () => {
+      if (mapView === "terrain") {
+        enableTerrain();
+      } else {
+        disableTerrain();
+      }
+    };
 
-      return;
-    }
-
-    if (mapView === "terrain") {
-      enableTerrain();
+    if (map.isStyleLoaded()) {
+      applyTerrainState();
     } else {
-      disableTerrain();
+      map.once(
+        "style.load",
+        applyTerrainState
+      );
     }
+
+    return () => {
+      map.off(
+        "style.load",
+        applyTerrainState
+      );
+    };
   }, [mapView]);
 
   useEffect(() => {
@@ -623,39 +620,34 @@ export default function SimulationMap({
     };
   }, [layoutVersion]);
 
-  const STREET_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
   const ARCGIS_API_KEY = process.env.NEXT_PUBLIC_ARCGIS_API_KEY;
 
-  const SATELLITE_STYLE = {
-    version: 8 as const,
+  const SATELLITE_STYLE =
+    useMemo(
+      () =>
+        createSatelliteStyle(
+          ARCGIS_API_KEY ?? ""
+        ),
+      []
+    );
 
-    sources: {
-      satellite: {
-        type: "raster" as const,
-
-        tiles: [
-          "https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}?token=YOUR_ARCGIS_TOKEN",
-        ],
-
-        tileSize: 256,
-
-        attribution:
-          "Esri, Maxar, Earthstar Geographics, and the GIS User Community",
-      },
-    },
-
-    layers: [
-      {
-        id: "satellite",
-        type: "raster" as const,
-        source: "satellite",
-      },
-    ],
-  };
-
+  useEffect(() => {
+    if (!ARCGIS_API_KEY) {
+      console.warn(
+        "NEXT_PUBLIC_ARCGIS_API_KEY is not configured."
+      );
+    }
+  }, []);
 
   return (
-    <div className="relative h-full min-h-0 min-w-0 w-full">
+    <div className="relative h-full min-h-[560px] overflow-hidden rounded-[28px] border border-slate-200 bg-slate-50">
+      <MapTopBar
+        mapView={mapView}
+        onMapViewChange={setMapView}
+        hazardOverlay={hazardOverlay}
+        onHazardOverlayChange={setHazardOverlay}
+      />
+
       <Map
         ref = { mapRef}
         initialViewState={{
@@ -675,196 +667,6 @@ export default function SimulationMap({
         cursor="crosshair"
         onClick={handleMapClick}
       >
-        <div
-          className="
-            absolute right-4 top-4 z-30
-            w-[292px]
-            overflow-hidden rounded-2xl
-            border border-slate-200/80
-            bg-white/95 shadow-lg backdrop-blur-md
-          "
-        >
-          <div className="border-b border-slate-100 px-3 py-2.5">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                View
-              </p>
-
-              <div className="flex rounded-xl bg-slate-100 p-1">
-                {(["map", "satellite", "terrain"] as const).map((view) => (
-                  <button
-                    key={view}
-                    onClick={() => setMapView(view)}
-                    className={`rounded-lg px-3 py-1.5 text-[10px] font-medium transition ${
-                      mapView === view
-                        ? "bg-white text-slate-900 shadow-sm"
-                        : "text-slate-500"
-                    }`}
-                  >
-                    {view === "terrain"
-                      ? "3D"
-                      : view[0].toUpperCase() + view.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="border-b border-slate-100 px-3 py-2.5">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Scenario
-            </p>
-
-            {/* Current / Proposed / Mitigated */}
-            <div className="mt-2 grid grid-cols-3 rounded-xl bg-slate-100 p-1">
-              {(
-                [
-                  "current",
-                  "proposed",
-                  "mitigated",
-                ] as const
-              ).map((view) => {
-                const disabled =
-                  view === "mitigated" &&
-                  !hasMitigation;
-
-                return (
-                  <button
-                    key={view}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => {
-                      if (!disabled) {
-                        setSimulationView(view);
-                      }
-                    }}
-                    className={`
-                      rounded-lg px-2 py-1.5
-                      text-[10px] font-medium capitalize
-                      transition-all duration-200
-                      ${
-                        simulationView === view
-                          ? "bg-white text-slate-900 shadow-sm"
-                          : disabled
-                            ? "cursor-not-allowed text-slate-300"
-                            : "text-slate-500 hover:text-slate-800"
-                      }
-                    `}
-                  >
-                    {view}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="px-3 py-2.5">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Hazard overlay
-            </p>
-
-            <div className="mt-2 grid grid-cols-4 rounded-xl bg-slate-100 p-1">
-              {(
-                [
-                  null,
-                  "flood",
-                  "tsunami",
-                  "landslide",
-                ] as const
-              ).map((value) => {
-                const active =
-                  hazardOverlay === value;
-
-                const hasMappedData =
-                  value === null
-                    ? true
-                    : hazardMapped[value];
-
-                return (
-                  <button
-                    key={value ?? "none"}
-                    type="button"
-                    onClick={() =>
-                      setHazardOverlay(value)
-                    }
-                    className={`
-                      flex-1 rounded-xl
-                      px-2 py-2
-                      text-[10px] font-medium
-                      transition-all duration-200
-
-                      ${
-                        active
-                          ? "bg-slate-900 text-white shadow-sm"
-                          : hasMappedData
-                            ? "text-slate-500 hover:bg-white hover:text-slate-800"
-                            : "text-slate-300 hover:bg-white"
-                      }
-                    `}
-                  >
-                    {value === null
-                      ? "None"
-                      : HAZARD_STYLE[value].label}
-                  </button>
-                );
-              })}
-          </div>
-          </div>
-        </div>
-
-        {hazardOverlay && (
-          <div
-            className="
-              absolute bottom-5 right-5 z-20
-              min-w-[190px]
-              rounded-2xl
-              border border-slate-200/80
-              bg-white/95
-              px-3.5 py-3
-              shadow-lg
-              backdrop-blur-md
-            "
-          >
-            <div className="flex items-start gap-2.5">
-              <span
-                className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{
-                  backgroundColor:
-                    selectedHazardHasData
-                      ? HAZARD_STYLE[
-                          hazardOverlay
-                        ].tint
-                      : "#94a3b8",
-                }}
-              />
-
-              <div>
-                <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
-                  Context layer
-                </p>
-
-                <p className="mt-0.5 text-xs font-semibold text-slate-800">
-                  {
-                    HAZARD_STYLE[hazardOverlay]
-                      .label
-                  }
-                </p>
-
-                {selectedHazardHasData ? (
-                  <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                    Mapped BNPB InaRISK hazard
-                    within the selected context.
-                  </p>
-                ) : (
-                  <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                    No mapped values returned
-                    within this analysis area.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         <Source
           id="hillshade-dem"
@@ -890,7 +692,7 @@ export default function SimulationMap({
         {/* Hazard raster */}
         {hazardOverlayUrl &&
           hazardOverlayBounds &&
-          selectedHazardHasData && (
+          selectedHazardPresent && (
           <Source
             id="hazard-overlay"
             type="image"
@@ -956,7 +758,7 @@ export default function SimulationMap({
         {/* Outside mask */}
         {analysisMask &&
           hazardOverlay &&
-          selectedHazardHasData && (
+          selectedHazardPresent && (
           <Source
             id="analysis-mask"
             type="geojson"
@@ -1019,28 +821,13 @@ export default function SimulationMap({
             data={projectFootprint}
           >
             <Layer
-            id="project-footprint-fill"
-            type="fill"
-            paint={{
-              "fill-color":
-                simulationView === "mitigated"
-                  ? "#10b981"
-                  : "#2563eb",
-              "fill-opacity": 0.18,
-            }}
-          />
-
-          <Layer
-            id="project-footprint-outline"
-            type="line"
-            paint={{
-              "line-color":
-                simulationView === "mitigated"
-                  ? "#059669"
-                  : "#2563eb",
-              "line-width": 3,
-            }}
-          />
+              id="project-footprint-fill"
+              type="fill"
+              paint={{
+                "fill-color": footprintVisual.fillColor,
+                "fill-opacity": footprintVisual.fillOpacity,
+              }}
+            />
           </Source>
         )}
 
@@ -1176,260 +963,58 @@ export default function SimulationMap({
         )}
       </Map>
 
+      {hazardOverlay && (
+        <div className="pointer-events-none absolute right-4 top-16 z-20">
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{
+                backgroundColor:
+                  selectedHazardPresent
+                    ? HAZARD_STYLE[hazardOverlay].tint
+                    : "#94a3b8",
+              }}
+            />
 
-      {/* Initial instruction */}
-      {!hasDefinedSite && (
-        <div className="absolute left-1/2 top-5 z-10 -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 px-4 py-2 text-sm text-slate-600 shadow-sm">
-          {footprintMode === "draw"
-            ? "Draw the project boundary on the map"
-            : !selectedSite
-              ? "Click the map to place the proposed development"
-              : "Enter a project area to define the development footprint"}
+            <span className="text-[10px] font-medium text-slate-600">
+              {!selectedHazardHasData
+                ? `${HAZARD_STYLE[hazardOverlay].label}: no mapped data`
+                : selectedHazardPresent
+                ? `${HAZARD_STYLE[hazardOverlay].label} hazard mapped`
+                : `${HAZARD_STYLE[hazardOverlay].label}: no hazard value`}
+            </span>
+          </div>
         </div>
       )}
+      {projectFootprint && (
+        <MapLegend
+          simulationView={
+            simulationView
+          }
+          imperviousPercent={
+            imperviousPercent
+          }
+          greenPercent={
+            greenPercent
+          }
+          permeableSurfacePercent={
+            permeableSurfacePercent
+          }
+          greenInfrastructurePercent={
+            greenInfrastructurePercent
+          }
+          hasMitigation={
+            hasMitigation
+          }
+        />
+      )}
 
-      {/* Site information */}
-      <div
-        className="
-          absolute left-5 top-5 z-20
-          rounded-2xl
-          border border-slate-200/80
-          bg-white/95
-          px-3.5 py-3
-          shadow-md
-          backdrop-blur-md
-        "
-      >
-        <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
-          Project footprint
-        </p>
-
-        <p className="mt-1 text-xl font-semibold tracking-tight text-slate-950">
-          {formatArea(projectAreaHa)}
-        </p>
-
-        <p className="mt-0.5 text-[10px] text-slate-400">
-          {footprintMode === "draw"
-            ? "Drawn boundary"
-            : footprintMode === "dimensions"
-              ? `${widthM} × ${lengthM} m`
-              : "Equivalent site area"}
-        </p>
+      <div className="pointer-events-none absolute bottom-4 right-4 z-20">
+        <div className="rounded-lg bg-white/90 px-2.5 py-1.5 text-[9px] text-slate-500 shadow-sm backdrop-blur">
+          {mapSourceLabel}
+        </div>
       </div>
-
-      {(
-        simulationView === "current"
-          ? selectedSite !== null
-          : hasDefinedSite
-      ) && (
-        <div className="absolute bottom-5 left-5 z-10 w-48 rounded-xl border border-white/40 bg-white/95 p-3 shadow-sm backdrop-blur">
-          {simulationView === "current" && (
-            <>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                Current site
-              </p>
-
-              <p className="mt-1 text-xs font-semibold text-slate-800">
-                Existing condition
-              </p>
-
-              <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                Satellite imagery shows the existing physical site before the proposed development.
-              </p>
-            </>
-          )}
-
-          {hasDefinedSite && simulationView == "proposed" && (
-            <>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-600">
-                Proposed development
-              </p>
-
-              <p className="mt-1 text-xs font-semibold text-slate-800">
-                Surface composition changes
-              </p>
-
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                <MapMetric
-                  label="Impervious"
-                  value={`${imperviousPercent}%`}
-                />
-
-                <MapMetric
-                  label="Green"
-                  value={`${greenPercent}%`}
-                />
-
-                <MapMetric
-                  label="Other"
-                  value={`${Math.max(
-                    0,
-                    100 -
-                      imperviousPercent -
-                      greenPercent
-                  )}%`}
-                />
-              </div>
-
-              <div className="mt-3 rounded-lg bg-blue-50 p-2.5">
-                <p className="text-[9px] font-medium uppercase tracking-wide text-blue-700">
-                  Comparative runoff tendency
-                </p>
-
-                <div className="mt-1 flex items-center gap-2">
-                  <span className="text-sm font-semibold text-slate-600">
-                    {baselineRunoffPressure.toFixed(3)}
-                  </span>
-
-                  <span className="text-xs text-slate-300">
-                    →
-                  </span>
-
-                  <span className="text-sm font-semibold text-blue-700">
-                    {scenarioRunoffPressure.toFixed(3)}
-                  </span>
-                </div>
-
-                {baselineRunoffPressure > 0 && (
-                  <p className="mt-1 text-[10px] font-semibold text-blue-700">
-                    {scenarioRunoffPressure >=
-                    baselineRunoffPressure
-                      ? "↑"
-                      : "↓"}{" "}
-                    {Math.abs(
-                      ((scenarioRunoffPressure -
-                        baselineRunoffPressure) /
-                        baselineRunoffPressure) *
-                        100
-                    ).toFixed(1)}
-                    %
-                  </p>
-                )}
-              </div>
-            </>
-          )}
-
-          {hasDefinedSite && simulationView === "mitigated" && (
-            <>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600">
-                Mitigated design
-              </p>
-
-              <p className="mt-1 text-xs font-semibold text-slate-800">
-                Improved site response
-              </p>
-
-              <div className="mt-3 rounded-lg bg-emerald-50 p-2.5">
-                <p className="text-[9px] font-medium uppercase tracking-wide text-emerald-700">
-                  Comparative runoff tendency
-                </p>
-
-                <div className="mt-1 flex items-center gap-2">
-                  <span className="text-sm font-semibold text-slate-700">
-                    {scenarioRunoffPressure.toFixed(3)}
-                  </span>
-
-                  <span className="text-xs text-slate-300">
-                    →
-                  </span>
-
-                  <span className="text-sm font-semibold text-emerald-700">
-                    {mitigatedRunoffPressure.toFixed(3)}
-                  </span>
-                </div>
-
-                <p className="mt-1 text-[10px] font-semibold text-emerald-700">
-                  ↓ {mitigationReductionPercent.toFixed(1)}%
-                </p>
-              </div>
-
-              <div className="mt-3">
-                <p className="text-[9px] font-medium uppercase tracking-wide text-slate-400">
-                  {[
-                    permeableSurfacePercent > 0,
-                    greenInfrastructurePercent > 0,
-                    retentionLevel !== "none",
-                  ].filter(Boolean).length}{" "}
-                  intervention
-                  {[
-                    permeableSurfacePercent > 0,
-                    greenInfrastructurePercent > 0,
-                    retentionLevel !== "none",
-                  ].filter(Boolean).length === 1
-                    ? ""
-                    : "s"}{" "}
-                  applied
-                </p>
-
-                <div className="mt-1 space-y-0.5 text-[10px] leading-4 text-slate-500">
-                  {permeableSurfacePercent > 0 && (
-                    <p>
-                      Permeable replacement ·{" "}
-                      {permeableSurfacePercent}%
-                    </p>
-                  )}
-
-                  {greenInfrastructurePercent > 0 && (
-                    <p>
-                      Green infrastructure ·{" "}
-                      {greenInfrastructurePercent}%
-                    </p>
-                  )}
-
-                  {retentionLevel !== "none" && (
-                    <p className="capitalize">
-                      Retention · {retentionLevel}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-      
     </div>
-  );
-}
-
-function MapMetric({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div>
-      <p className="text-[9px] text-slate-400">
-        {label}
-      </p>
-
-      <p className="mt-0.5 text-xs font-semibold text-slate-800">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function LegendDot({
-  color,
-  label,
-}: {
-  color: string;
-  label: string;
-}) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span
-        className="h-2 w-2 rounded-sm"
-        style={{
-          backgroundColor: color,
-        }}
-      />
-
-      {label}
-    </span>
   );
 }
 

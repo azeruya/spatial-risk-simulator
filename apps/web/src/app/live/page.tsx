@@ -23,7 +23,7 @@ export default async function LivePage() {
   ]);
 
   return (
-    <main className="h-[calc(100vh-73px)]">
+    <main className="h-[calc(100vh-64px)]">
       <LiveMapPanel
         latest={latest}
         significantEarthquakes={significantEarthquakes}

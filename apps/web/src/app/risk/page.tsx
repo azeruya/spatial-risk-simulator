@@ -3,7 +3,7 @@ import RiskSidebar from "@/components/risk/RiskSidebar";
 
 export default function RiskPage() {
   return (
-    <main className="h-[calc(100vh-73px)]">
+    <main className="h-[calc(100vh-64px)]">
       <div className="flex h-full">
         <RiskSidebar />
 

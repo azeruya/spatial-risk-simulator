@@ -54,6 +54,14 @@ async function fetchFootprintHazard(
 
   const data = await response.json();
 
+  console.log(
+    `[footprint hazard] ${endpoint}`,
+    {
+      status: response.status,
+      data,
+    }
+  );
+
   const validSamples =
     typeof data.validSamples === "number"
       ? data.validSamples
@@ -100,7 +108,7 @@ export default function SimulatePage() {
     searchParams.has("lon");
 
   const [footprintMode, setFootprintMode] =
-    useState<FootprintMode>("area");
+    useState<FootprintMode>("draw");
 
   const [leftPanelOpen, setLeftPanelOpen] =
     useState(true);
@@ -185,6 +193,60 @@ export default function SimulatePage() {
     landslide:
       (footprintHazards.landslide?.validSamples ?? 0) > 0,
   };
+
+  const hazardPresent = {
+    flood:
+      (footprintHazards.flood?.maximum ?? 0) > 0,
+
+    tsunami:
+      (footprintHazards.tsunami?.maximum ?? 0) > 0,
+
+    landslide:
+      (footprintHazards.landslide?.maximum ?? 0) > 0,
+  };
+
+  useEffect(() => {
+    console.log(
+      "[simulate] footprintHazards:",
+      footprintHazards
+    );
+
+    console.log(
+      "[simulate] hazardMapped:",
+      hazardMapped
+    );
+  }, [footprintHazards]);
+
+  function handleResetScenario() {
+    // Site
+    setFootprintMode("draw");
+    setDrawShape("rectangle");
+
+    setAreaValue(1);
+    setAreaUnit("ha");
+
+    setWidthM(100);
+    setLengthM(100);
+    setBearing(0);
+
+    setSelectedSite(null);
+    setDrawnFootprint(null);
+    setIsDrawing(false);
+
+    // Program
+    setScenarioType("expansion");
+    setImperviousPercent(65);
+    setGreenPercent(25);
+    setAdditionalPopulation(0);
+
+    // Mitigation
+    setPermeableSurfacePercent(0);
+    setGreenInfrastructurePercent(0);
+    setRetentionLevel("none");
+
+    // Scenario display
+    setSimulationView("proposed");
+  }
 
   const drawnAreaM2 = useMemo(() => {
     if (!drawnFootprint) return 0;
@@ -374,7 +436,6 @@ export default function SimulatePage() {
       projectFootprint,
       selectedSite,
     ]);
-
 
   const analysisCircle = useMemo(() => {
     if (!analysisCenter) return null;
@@ -869,7 +930,7 @@ export default function SimulatePage() {
       setLandCoverError(false);
 
       try {
-        const response = await fetch("api/land-cover/analyse",
+        const response = await fetch("/api/land-cover/analyse",
           {
             method: "POST",
 
@@ -922,7 +983,7 @@ export default function SimulatePage() {
   }, [projectFootprint]);
 
   return (
-    <main className="h-[calc(100vh-73px)] bg-slate-50">
+    <main className="h-[calc(100vh-64px)] bg-slate-50">
       <div className="flex h-full min-h-0 w-full overflow-hidden">
         {/* Workspace */}
         
@@ -1031,6 +1092,7 @@ export default function SimulatePage() {
                 }}
 
                 siteImportedFromRisk={siteImportedFromRisk}
+                onReset={handleResetScenario}
               />
             ) : (
               <div className="flex h-full items-start justify-center pt-16">
@@ -1113,6 +1175,7 @@ export default function SimulatePage() {
               simulationResult.baselineRunoffPressure
             }
             hazardMapped={hazardMapped}
+            hazardPresent={hazardPresent}
             hazardOverlay={hazardOverlay}
             setHazardOverlay={setHazardOverlay}
             layoutVersion={`${leftPanelOpen}-${rightPanelOpen}`}
@@ -1169,6 +1232,8 @@ export default function SimulatePage() {
                 landCoverAnalysis={landCoverAnalysis}
                 landCoverLoading={landCoverLoading}
                 landCoverError={landCoverError}
+                simulationView={simulationView}
+                setSimulationView={setSimulationView}
               />
             ) : (
               <div className="flex h-full items-start justify-center pt-16">

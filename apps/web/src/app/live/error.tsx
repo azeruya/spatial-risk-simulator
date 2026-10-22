@@ -10,7 +10,7 @@ export default function Error({
   reset: () => void;
 }) {
   return (
-    <main className="flex min-h-[calc(100vh-73px)] items-center justify-center bg-slate-50 px-6">
+    <main className="flex min-h-[calc(100vh-64px)] items-center justify-center bg-slate-50 px-6">
       <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
           <AlertTriangle className="h-6 w-6 text-red-600" />
