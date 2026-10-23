@@ -1,30 +1,41 @@
+import { useState } from "react";
 import { ScenarioType } from "@/types/simulation";
 import { ScenarioSlider } from "./ScenarioControls";
 
-const PROGRAM_PRESETS = {
-  housing: {
-    scenarioType:
-      "new-development",
-    imperviousPercent: 55,
-    greenPercent: 35,
-    occupants: 250,
-  },
+type PresetId =
+  | "residential"
+  | "commercial"
+  | "industrial";
 
-  redevelopment: {
-    scenarioType:
-      "green-retrofit",
-    imperviousPercent: 60,
-    greenPercent: 30,
-    occupants: 100,
+const PRESETS: {
+  id: "residential" | "commercial" | "industrial";
+  label: string;
+  description: string;
+  impervious: number;
+  green: number;
+}[] = [
+  {
+    id: "residential",
+    label: "Residential",
+    description: "Housing with moderate built area and more open space.",
+    impervious: 55,
+    green: 35,
   },
-
-  commercial: {
-    scenarioType: "expansion",
-    imperviousPercent: 80,
-    greenPercent: 10,
-    occupants: 150,
+  {
+    id: "commercial",
+    label: "Commercial",
+    description: "Shops, offices, hotels, and other business-oriented development.",
+    impervious: 70,
+    green: 20,
   },
-} as const;
+  {
+    id: "industrial",
+    label: "Industrial",
+    description: "Warehouses, factories, and logistics sites with large sealed areas.",
+    impervious: 85,
+    green: 5,
+  },
+];
 
 export function ProgramSection({
   scenarioType,
@@ -40,200 +51,175 @@ export function ProgramSection({
   setAdditionalPopulation,
 }: {
   scenarioType: ScenarioType;
-  setScenarioType: (
-    value: ScenarioType
-  ) => void;
+  setScenarioType: (value: ScenarioType) => void;
 
   imperviousPercent: number;
-  setImperviousPercent: (
-    value: number
-  ) => void;
+  setImperviousPercent: (value: number) => void;
 
   greenPercent: number;
-  setGreenPercent: (
-    value: number
-  ) => void;
+  setGreenPercent: (value: number) => void;
 
   additionalPopulation: number;
-  setAdditionalPopulation: (
-    value: number
-  ) => void;
+  setAdditionalPopulation: (value: number) => void;
 }) {
+  
+ const [selectedPreset, setSelectedPreset] =
+  useState<PresetId | null>("residential");
+
+const activePreset =
+  PRESETS.find(
+    (preset) =>
+      preset.id === selectedPreset
+  ) ?? null;
+
+  const maxGreen = 100 - imperviousPercent;
+
   function applyPreset(
-    type:
-      | "housing"
-      | "redevelopment"
-      | "commercial"
+    preset: (typeof PRESETS)[number]
   ) {
-    if (type === "housing") {
-      setScenarioType(
-        "new-development"
-      );
-      setImperviousPercent(55);
-      setGreenPercent(35);
-      setAdditionalPopulation(250);
-    }
+    setSelectedPreset(preset.id);
 
-    if (type === "redevelopment") {
-      setScenarioType(
-        "green-retrofit"
-      );
-      setImperviousPercent(60);
-      setGreenPercent(30);
-      setAdditionalPopulation(100);
-    }
+    setImperviousPercent(
+      preset.impervious
+    );
 
-    if (type === "commercial") {
-      setScenarioType("expansion");
-      setImperviousPercent(80);
-      setGreenPercent(10);
-      setAdditionalPopulation(150);
+    setGreenPercent(
+      preset.green
+    );
+  }
+
+  function handleImpervious(
+    value: number
+  ) {
+    setSelectedPreset(null);
+
+    setImperviousPercent(value);
+
+    if (
+      greenPercent >
+      100 - value
+    ) {
+      setGreenPercent(
+        100 - value
+      );
     }
   }
 
+  function handleGreen(
+    value: number
+  ) {
+    setSelectedPreset(null);
+    setGreenPercent(value);
+  }
+
   return (
-    <div>
-      <p className="text-xs font-medium text-slate-700">
-        Quick presets
-      </p>
+    <div className="space-y-5">
+      <div>
+        <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="Presets">
+          {PRESETS.map((preset) => {
+            const active = activePreset?.id === preset.id;
 
-      <div className="mt-2 grid grid-cols-1 gap-2">
-        <PresetButton
-          label="Greenfield housing"
-          description="Balanced housing with open space"
-          onClick={() =>
-            applyPreset("housing")
-          }
-        />
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => applyPreset(preset)}
+                className={`rounded-xl border px-1 py-2 text-xs transition ${
+                  active
+                    ? "border-blue-300 bg-blue-50 font-semibold text-blue-700"
+                    : "border-slate-200 text-slate-600 hover:border-blue-200 hover:bg-blue-50/40"
+                }`}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
 
-        <PresetButton
-          label="Urban redevelopment"
-          description="Reduce sealed surface in an existing built-up site"
-          onClick={() =>
-            applyPreset(
-              "redevelopment"
-            )
-          }
-        />
+        <div className="mt-2">
+          <p className="text-xs leading-4 text-slate-500">
+            {activePreset
+              ? activePreset.description
+              : "Custom surface mix."}
+          </p>
 
-        <PresetButton
-          label="Commercial"
-          description="Higher-intensity developed surface"
-          onClick={() =>
-            applyPreset(
-              "commercial"
-            )
-          }
-        />
+          <p className="mt-1 text-[10px] leading-4 text-slate-400">
+            Starting values are illustrative defaults.
+            Adjust them to match your project.
+          </p>
+        </div>
       </div>
 
-      <div className="my-5 border-t border-slate-100" />
+      <MixBar impervious={imperviousPercent} green={greenPercent} />
 
-      <label className="text-xs font-medium text-slate-700">
-        Development type
-      </label>
+      <ScenarioSlider
+        label="Paved surface"
+        description="Buildings, roads and paved areas"
+        value={imperviousPercent}
+        onChange={handleImpervious}
+      />
 
-      <select
-        value={scenarioType}
-        onChange={(event) =>
-          setScenarioType(
-            event.target
-              .value as ScenarioType
-          )
-        }
-        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-800"
-      >
-        <option value="new-development">
-          New development
-        </option>
+      <ScenarioSlider
+        label="Green space"
+        description="Vegetated and permeable space"
+        value={greenPercent}
+        onChange={handleGreen}
+        max={maxGreen}
+        hint={`Up to ${maxGreen}% with this paved share`}
+      />
 
-        <option value="expansion">
-          Expansion
-        </option>
-
-        <option value="densification">
-          Densification
-        </option>
-
-        <option value="green-retrofit">
-          Green retrofit
-        </option>
-      </select>
-
-      <div className="mt-5">
-        <ScenarioSlider
-          label="Impervious surface"
-          description="Buildings, roads and paved surfaces"
-          value={imperviousPercent}
-          onChange={
-            setImperviousPercent
-          }
-        />
-      </div>
-
-      <div className="mt-5">
-        <ScenarioSlider
-          label="Green / open space"
-          description="Vegetated and permeable space"
-          value={greenPercent}
-          onChange={setGreenPercent}
-        />
-      </div>
-
-      <div className="mt-5">
-        <label className="text-xs font-medium text-slate-700">
-          Additional occupants
-        </label>
-
-        <p className="mt-1 text-[11px] text-slate-500">
-          Expected people introduced by
-          the project.
-        </p>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <label
+            htmlFor="additional-occupants"
+            className="text-sm font-medium text-slate-800"
+          >
+            Added occupants
+          </label>
+          <p className="mt-0.5 text-xs leading-4 text-slate-500">
+            People living or working here
+          </p>
+        </div>
 
         <input
+          id="additional-occupants"
           type="number"
           min={0}
           step={10}
           value={additionalPopulation}
           onChange={(event) =>
-            setAdditionalPopulation(
-              Math.max(
-                0,
-                Number(
-                  event.target.value
-                )
-              )
-            )
+            setAdditionalPopulation(Math.max(0, Number(event.target.value)))
           }
-          className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"
+          className="w-24 rounded-xl border border-slate-200 px-3 py-2 text-right text-sm"
         />
       </div>
+
     </div>
   );
 }
 
-function PresetButton({
-  label,
-  description,
-  onClick,
-}: {
-  label: string;
-  description: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-xl border border-slate-200 p-3 text-left transition hover:border-blue-200 hover:bg-blue-50/40"
-    >
-      <p className="text-xs font-semibold text-slate-800">
-        {label}
-      </p>
+function MixBar({ impervious, green }: { impervious: number; green: number }) {
+  const other = Math.max(0, 100 - impervious - green);
 
-      <p className="mt-1 text-[10px] leading-4 text-slate-500">
-        {description}
-      </p>
-    </button>
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between text-xs text-slate-600">
+        <span className="font-medium text-slate-800">Surface mix</span>
+        <span>
+          Paved {impervious}% · Green {green}% · Other {other}%
+        </span>
+      </div>
+
+      <div
+        className="flex h-2.5 overflow-hidden rounded-full bg-slate-100"
+        role="img"
+        aria-label={`Paved ${impervious}%, green ${green}%, other ${other}%`}
+      >
+        <span className="bg-slate-600" style={{ width: `${impervious}%` }} />
+        <span className="bg-emerald-500" style={{ width: `${green}%` }} />
+        <span className="bg-slate-300" style={{ width: `${other}%` }} />
+      </div>
+    </div>
   );
 }
