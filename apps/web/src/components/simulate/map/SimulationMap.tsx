@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import MapGL, { Marker, ScaleControl, type MapRef } from "react-map-gl/maplibre";
 import { setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -177,27 +177,6 @@ export default function SimulationMap({
     analysisCircle,
   });
 
-  // Keep the canvas sized to its container (panels collapsing, window resizing).
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    let frame = 0;
-    const resize = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => mapRef.current?.resize());
-    };
-
-    const observer = new ResizeObserver(resize);
-    observer.observe(el);
-    resize();
-
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-    };
-  }, []);
-
   // Track whether the map is rotated and whether the parcel is on screen.
   const syncView = useCallback(() => {
     const map = mapRef.current;
@@ -233,15 +212,54 @@ export default function SimulationMap({
 
   const circleBounds = analysisCircle ? getBounds(analysisCircle) : null;
 
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+
+    if (!container) return;
+
+    let frame = 0;
+
+    const resizeMap = () => {
+      cancelAnimationFrame(frame);
+
+      frame = requestAnimationFrame(() => {
+        mapRef.current?.resize();
+      });
+    };
+
+    const observer = new ResizeObserver(() => {
+      resizeMap();
+    });
+
+    observer.observe(container);
+
+    // Initial resize after React has committed layout.
+    resizeMap();
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, []);
+
   return (
     <div
-      ref={containerRef}
-      className="relative h-full min-h-[560px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
-    >
+  ref={containerRef}
+  className="relative h-full min-h-0 min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
+>
       <MapGL
         ref={mapRef}
-        initialViewState={{ longitude: 100.3543, latitude: -0.9471, zoom: 12 }}
-        style={{ width: "100%", height: "100%" }}
+        initialViewState={{
+    longitude: 100.3543,
+    latitude: -0.9471,
+    zoom: 12,
+  }}
+  style={{
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+  }}
         mapStyle={isImagery ? SATELLITE_STYLE : STREET_STYLE}
         cursor={footprintMode === "draw" ? undefined : "crosshair"}
         onClick={handleMapClick}

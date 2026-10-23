@@ -1,8 +1,5 @@
-// src/lib/planning/build-findings.ts
-
 import type {
   Finding,
-  FootprintHazards,
   HazardStatus,
 } from "@/types/simulation";
 
@@ -14,11 +11,11 @@ import {
   buildTerrainContext,
 } from "@/lib/planning/terrain-context";
 
-import { isHazardPresent } from "./hazard-status";
+import {
+  isHazardPresent,
+} from "./hazard-status";
 
 type BuildFindingsInput = {
-  hazards: FootprintHazards;
-
   floodStatus: HazardStatus;
   tsunamiStatus: HazardStatus;
   landslideStatus: HazardStatus;
@@ -31,10 +28,12 @@ type BuildFindingsInput = {
   greenPercent: number;
   baselineGreenPercent: number;
 
-  additionalPopulation: number;
+  runoffCurrent: number;
+  runoffProposed: number;
+  runoffMitigated: number | null;
 
-  runoffChangePercent: number;
-  mitigationReductionPercent: number;
+  nearbyPopulation: number | null;
+  additionalPopulation: number;
 };
 
 const ORDER = {
@@ -44,9 +43,16 @@ const ORDER = {
   good: 3,
 } as const;
 
-export function buildFindings({
-  hazards,
+function percentChange(
+  from: number,
+  to: number
+) {
+  if (from <= 0) return 0;
 
+  return ((to - from) / from) * 100;
+}
+
+export function buildFindings({
   floodStatus,
   tsunamiStatus,
   landslideStatus,
@@ -59,12 +65,18 @@ export function buildFindings({
   greenPercent,
   baselineGreenPercent,
 
-  additionalPopulation,
+  runoffCurrent,
+  runoffProposed,
+  runoffMitigated,
 
-  runoffChangePercent,
-  mitigationReductionPercent,
+  nearbyPopulation,
+  additionalPopulation,
 }: BuildFindingsInput): Finding[] {
   const findings: Finding[] = [];
+
+  // =========================================================
+  // DERIVED VALUES
+  // =========================================================
 
   const floodPresent =
     isHazardPresent(floodStatus);
@@ -83,6 +95,20 @@ export function buildFindings({
     greenPercent -
     baselineGreenPercent;
 
+  const runoffChangePercent =
+    percentChange(
+      runoffCurrent,
+      runoffProposed
+    );
+
+  const mitigationReductionPercent =
+    runoffMitigated !== null
+      ? percentChange(
+          runoffProposed,
+          runoffMitigated
+        )
+      : 0;
+
   const terrainContext =
     buildTerrainContext(terrain);
 
@@ -96,7 +122,7 @@ export function buildFindings({
 
   // =========================================================
   // SITE FINDINGS
-  // Things the design cannot directly change
+  // Conditions the design cannot directly remove
   // =========================================================
 
   if (
@@ -106,14 +132,10 @@ export function buildFindings({
   ) {
     findings.push({
       id: "tsunami-low-lying",
-
       severity: "high",
-
       scope: "site",
-
       headline:
         "Tsunami exposure at a low site",
-
       detail:
         `Ground elevation is about ${Math.round(
           terrain.elevation.mean
@@ -122,14 +144,10 @@ export function buildFindings({
   } else if (tsunamiPresent) {
     findings.push({
       id: "tsunami-present",
-
       severity: "high",
-
       scope: "site",
-
       headline:
         "Tsunami exposure is mapped here",
-
       detail:
         "Surface design cannot remove tsunami exposure. Review evacuation access and site suitability.",
     });
@@ -142,28 +160,20 @@ export function buildFindings({
   ) {
     findings.push({
       id: "flood-flat-low",
-
       severity: "medium",
-
       scope: "check",
-
       headline:
         "Low flat ground may drain slowly",
-
       detail:
         "Mapped flood exposure overlaps relatively low and flat terrain. Review drainage paths and finished-floor elevation.",
     });
   } else if (floodPresent) {
     findings.push({
       id: "flood-present",
-
       severity: "medium",
-
       scope: "site",
-
       headline:
         "Flood exposure is mapped here",
-
       detail:
         "Flood-hazard values occur within the proposed footprint.",
     });
@@ -175,14 +185,10 @@ export function buildFindings({
   ) {
     findings.push({
       id: "landslide-steep",
-
       severity: "high",
-
       scope: "site",
-
       headline:
         "Landslide exposure overlaps steep terrain",
-
       detail:
         "Review slope stability, grading, drainage concentration, and geotechnical conditions before detailed design.",
     });
@@ -192,35 +198,37 @@ export function buildFindings({
   ) {
     findings.push({
       id: "landslide-sloping",
-
       severity: "medium",
-
       scope: "check",
-
       headline:
         "Slope conditions need closer review",
-
       detail:
         "Mapped landslide exposure overlaps sloping terrain. Avoid unnecessary grading and concentrated runoff.",
+    });
+  } else if (landslidePresent) {
+    findings.push({
+      id: "landslide-present",
+      severity: "medium",
+      scope: "site",
+      headline:
+        "Landslide exposure is mapped here",
+      detail:
+        "Review terrain, drainage, grading, and geotechnical conditions before detailed design.",
     });
   }
 
   // =========================================================
   // DESIGN FINDINGS
-  // Things the user can influence
+  // Conditions caused or improved by the proposal
   // =========================================================
 
   if (runoffChangePercent <= -5) {
     findings.push({
       id: "runoff-improves",
-
       severity: "good",
-
       scope: "design",
-
       headline:
-        "Less rainwater runs off",
-
+        "Less rainwater may run off",
       detail:
         `Comparative runoff pressure falls ${Math.abs(
           runoffChangePercent
@@ -233,16 +241,13 @@ export function buildFindings({
   if (runoffChangePercent >= 10) {
     findings.push({
       id: "runoff-increases",
-
-      severity: floodPresent
-        ? "high"
-        : "medium",
-
+      severity:
+        floodPresent
+          ? "high"
+          : "medium",
       scope: "design",
-
       headline:
         "More rainwater may run off",
-
       detail:
         `Comparative runoff pressure increases ${runoffChangePercent.toFixed(
           0
@@ -253,16 +258,12 @@ export function buildFindings({
   if (imperviousChange >= 10) {
     findings.push({
       id: "impervious-increase",
-
       severity: "medium",
-
       scope: "design",
-
       headline:
         "More surface becomes sealed",
-
       detail:
-        `Impervious cover increases by about ${imperviousChange.toFixed(
+        `Paved or impervious cover increases by about ${imperviousChange.toFixed(
           0
         )} percentage points compared with the mapped baseline.`,
     });
@@ -271,16 +272,12 @@ export function buildFindings({
   if (imperviousChange <= -10) {
     findings.push({
       id: "impervious-decrease",
-
       severity: "good",
-
       scope: "design",
-
       headline:
         "Less surface becomes sealed",
-
       detail:
-        `Impervious cover decreases by about ${Math.abs(
+        `Paved or impervious cover decreases by about ${Math.abs(
           imperviousChange
         ).toFixed(
           0
@@ -291,32 +288,24 @@ export function buildFindings({
   if (greenChange >= 10) {
     findings.push({
       id: "green-gain",
-
       severity: "good",
-
       scope: "design",
-
       headline:
         "More green space is retained",
-
       detail:
         `Green and open space increases by about ${greenChange.toFixed(
           0
-        )} percentage points.`,
+        )} percentage points compared with the mapped baseline.`,
     });
   }
 
   if (greenChange <= -15) {
     findings.push({
       id: "green-loss",
-
       severity: "medium",
-
       scope: "design",
-
       headline:
         "Green space is substantially reduced",
-
       detail:
         `Mapped vegetated cover decreases by about ${Math.abs(
           greenChange
@@ -325,6 +314,10 @@ export function buildFindings({
         )} percentage points.`,
     });
   }
+
+  // =========================================================
+  // PEOPLE / EXPOSURE
+  // =========================================================
 
   if (
     additionalPopulation > 0 &&
@@ -336,77 +329,86 @@ export function buildFindings({
   ) {
     findings.push({
       id: "occupancy-exposure",
-
       severity:
         tsunamiPresent
           ? "high"
           : "medium",
-
       scope: "site",
-
       headline:
         "More people would be exposed",
-
       detail:
-        `The proposal adds approximately ${additionalPopulation.toLocaleString()} occupants within a mapped hazard context.`,
+        nearbyPopulation !== null
+          ? `The proposal adds approximately ${additionalPopulation.toLocaleString()} occupants near an existing population context of about ${Math.round(
+              nearbyPopulation
+            ).toLocaleString()} people.`
+          : `The proposal adds approximately ${additionalPopulation.toLocaleString()} occupants within a mapped hazard context.`,
     });
   }
 
   // =========================================================
   // MITIGATION
+  // Compare mitigated against proposed
   // =========================================================
 
-  if (mitigationReductionPercent >= 5) {
+  if (
+    runoffMitigated !== null &&
+    mitigationReductionPercent <= -5
+  ) {
     findings.push({
       id: "mitigation-effect",
-
       severity: "good",
-
       scope: "design",
-
       headline:
-        "Mitigation further reduces runoff",
-
+        "Mitigation reduces runoff further",
       detail:
-        `Selected measures reduce comparative runoff pressure by another ${mitigationReductionPercent.toFixed(
+        `Selected measures reduce comparative runoff pressure by another ${Math.abs(
+          mitigationReductionPercent
+        ).toFixed(
           0
-        )}%.`,
+        )}% compared with the proposal.`,
     });
   }
 
   // =========================================================
-  // FALLBACKS / DATA STATES
+  // DATA AVAILABILITY
+  // Unavailable / no-data must not be interpreted as safe
   // =========================================================
 
-  const anyHazardPresent =
-    floodPresent ||
-    tsunamiPresent ||
-    landslidePresent;
+  const missingHazards: string[] = [];
 
-  if (!anyHazardPresent) {
-    const hasMissingData =
-      floodStatus === "unavailable" ||
-      tsunamiStatus === "unavailable" ||
-      landslideStatus === "unavailable" ||
-      floodStatus === "no-data" ||
-      tsunamiStatus === "no-data" ||
-      landslideStatus === "no-data";
+  if (
+    tsunamiStatus === "unavailable" ||
+    tsunamiStatus === "no-data"
+  ) {
+    missingHazards.push("tsunami");
+  }
 
-    if (hasMissingData) {
-      findings.push({
-        id: "hazard-data-incomplete",
+  if (
+    floodStatus === "unavailable" ||
+    floodStatus === "no-data"
+  ) {
+    missingHazards.push("flood");
+  }
 
-        severity: "info",
+  if (
+    landslideStatus === "unavailable" ||
+    landslideStatus === "no-data"
+  ) {
+    missingHazards.push("landslide");
+  }
 
-        scope: "check",
-
-        headline:
-          "Some hazard data is incomplete",
-
-        detail:
-          "A missing hazard value should not be interpreted as proof that no hazard exists.",
-      });
-    }
+  if (missingHazards.length > 0) {
+    findings.push({
+      id: "hazard-data-incomplete",
+      severity: "info",
+      scope: "check",
+      headline:
+        "Some hazard data is unavailable",
+      detail:
+        `No reliable mapped value was returned for ${missingHazards.join(
+          ", "
+        )}. Missing data should not be interpreted as no hazard.`,
+    });
   }
 
   return findings.sort(

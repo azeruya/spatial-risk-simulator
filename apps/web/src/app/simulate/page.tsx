@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useEffect, useState } from "react";
+import { useMemo, useEffect, useState, useRef } from "react";
 import { circle } from "@turf/circle";
 import { area } from "@turf/area";
 import centroid from "@turf/centroid";
@@ -148,6 +148,7 @@ async function fetchFootprintHazard(
 }
 
 export default function SimulatePage() {
+
   const [selectedSite, setSelectedSite] =
     useState<SelectedSite | null>(null);
 
@@ -603,6 +604,7 @@ export default function SimulatePage() {
         baselineGreenPercent ?? 0,
 
       additionalPopulation,
+      nearbyPopulation: baseline.population,
 
       runoffCurrent:
         simulationResult.baselineRunoffPressure,
@@ -625,13 +627,19 @@ export default function SimulatePage() {
     });
   }, [
     projectAreaM2,
-    imperviousPercent,
-    greenPercent,
-    additionalPopulation,
 
+    imperviousPercent,
     baselineImperviousPercent,
+
+    greenPercent,
     baselineGreenPercent,
 
+    additionalPopulation,
+    baseline.population,
+
+    simulationResult.baselineRunoffPressure,
+    simulationResult.scenarioRunoffPressure,
+    simulationResult.mitigatedRunoffPressure,
     simulationResult.runoffChangePercent,
     simulationResult.mitigationReductionPercent,
 
@@ -1089,19 +1097,34 @@ export default function SimulatePage() {
   }, [projectFootprint]);
 
   return (
-    <main className="h-[calc(100vh-64px)] bg-slate-50">
-      <div className="flex h-full min-h-0 w-full overflow-hidden">
+    <main className="h-[calc(100vh-64px)] min-w-0 overflow-hidden bg-slate-50">
+      <div
+  className="grid h-full min-h-0 w-full overflow-hidden"
+  style={{
+    gridTemplateColumns: `${
+      leftPanelOpen ? "340px" : "40px"
+    } minmax(0, 1fr) ${
+      rightPanelOpen ? "380px" : "48px"
+    }`,
+  }}
+>
         {/* Workspace */}
         
         <div
-          className={`
-            relative shrink-0 border-r border-slate-200 bg-white
-            ${leftPanelOpen ? "w-[340px]" : "w-10"}
-          `}
-        >
-          <div className="h-full overflow-y-auto">
-            {leftPanelOpen ? (
-              <ScenarioPanel
+  id="scenario-panel-shell"
+  className="
+    relative z-20
+    min-h-0 min-w-0
+    overflow-visible
+    border-r border-slate-200
+    bg-white
+  "
+>
+  {/* CLIPS PANEL CONTENT WITHOUT CLIPPING COLLAPSE BUTTON */}
+  <div className="absolute inset-0 min-w-0 overflow-hidden">
+    <div className="h-full w-full min-w-0 overflow-x-hidden overflow-y-auto">
+      {leftPanelOpen ? (
+        <ScenarioPanel
                 scenarioType={scenarioType}
                 setScenarioType={
                   setScenarioType
@@ -1199,41 +1222,38 @@ export default function SimulatePage() {
                 siteImportedFromRisk={siteImportedFromRisk}
                 onReset={handleResetScenario}
               />
-            ) : (
-              <div className="flex h-full items-start justify-center pt-16">
-                <span className="rotate-[-90deg] whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  Scenario
-                </span>
-              </div>
-            )}
-          </div>
-          
-
-          <button
-            type="button"
-            onClick={() =>
-              setLeftPanelOpen((open) => !open)
-            }
-            className="
-              absolute right-[-14px] top-5 z-50
-              flex h-7 w-7 items-center justify-center
-              rounded-full border border-slate-200
-              bg-white text-sm text-slate-600
-              shadow-sm transition
-              hover:bg-slate-50
-            "
-            aria-label={
-              leftPanelOpen
-                ? "Collapse scenario panel"
-                : "Expand scenario panel"
-            }
-          >
-            {leftPanelOpen ? "‹" : "›"}
-          </button>
+      ) : (
+        <div className="flex h-full items-start justify-center pt-16">
+          <span className="-rotate-90 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            Scenario
+          </span>
         </div>
+      )}
+    </div>
+  </div>
+
+  <button
+    type="button"
+    onClick={() =>
+      setLeftPanelOpen((open) => !open)
+    }
+    className="
+      absolute right-[-14px] top-5 z-50
+      flex h-7 w-7 items-center justify-center
+      rounded-full border border-slate-200
+      bg-white text-sm text-slate-600
+      shadow-sm transition hover:bg-slate-50
+    "
+  >
+    {leftPanelOpen ? "‹" : "›"}
+  </button>
+</div>
 
         {/* Map */}
-        <div className="relative min-w-0 flex-1">
+        <div
+  id="simulation-map-shell"
+  className="relative z-0 h-full min-h-0 min-w-0 overflow-hidden"
+>
           <SimulationMap
             selectedSite={selectedSite}
             onSelectSite={setSelectedSite}
@@ -1262,14 +1282,19 @@ export default function SimulatePage() {
         </div>
 
        <div
-          className={`
-            relative shrink-0 border-l border-slate-200 bg-white
-            ${rightPanelOpen ? "w-[380px]" : "w-12"}
-          `}
+          id="impact-panel-shell"
+          className="
+            relative z-20
+            min-h-0 min-w-0
+            overflow-visible
+            border-l border-slate-200
+            bg-white
+          "
         >
-          <div className="h-full overflow-y-auto">
-            {rightPanelOpen ? (    
-              <ImpactPanel
+          <div className="absolute inset-0 min-w-0 overflow-hidden">
+            <div className="h-full w-full min-w-0 overflow-x-hidden overflow-y-auto">
+              {rightPanelOpen ? (
+                <ImpactPanel
                 projectAreaHa={projectAreaHa}
                 imperviousPercent={imperviousPercent}
                 greenPercent={greenPercent}
@@ -1320,13 +1345,14 @@ export default function SimulatePage() {
                 simulationView={simulationView}
                 setSimulationView={setSimulationView}
               />
-            ) : (
-              <div className="flex h-full items-start justify-center pt-16">
-                <span className="rotate-90 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  Impact
-                </span>
-              </div>
-            )}
+              ) : (
+                <div className="flex h-full items-start justify-center pt-16">
+                  <span className="rotate-90 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Impact
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
 
           <button
@@ -1339,14 +1365,8 @@ export default function SimulatePage() {
               flex h-7 w-7 items-center justify-center
               rounded-full border border-slate-200
               bg-white text-sm text-slate-600
-              shadow-sm transition
-              hover:bg-slate-50
+              shadow-sm transition hover:bg-slate-50
             "
-            aria-label={
-              rightPanelOpen
-                ? "Collapse impact panel"
-                : "Expand impact panel"
-            }
           >
             {rightPanelOpen ? "›" : "‹"}
           </button>

@@ -3,15 +3,34 @@ import type {
   PlanningAssessment,
 } from "@/types/simulation";
 
-import type {TerrainAnalysis } from "@/types/terrain";
+import type {
+  TerrainAnalysis,
+} from "@/types/terrain";
 
-import {buildTerrainContext} from "@/lib/planning/terrain-context";
-import { buildFindings } from "./planning/build-findings";
-import { getHazardStatus, isHazardPresent } from "./planning/hazard-status";
-import { buildRecommendations } from "./planning/build-recommendations";
-import { buildAnalysisRows } from "./planning/build-analysis-rows";
-import { buildDataSources } from "./planning/build-data-sources";
+import {
+  buildTerrainContext,
+} from "@/lib/planning/terrain-context";
 
+import {
+  buildFindings,
+} from "./planning/build-findings";
+
+import {
+  getHazardStatus,
+  isHazardPresent,
+} from "./planning/hazard-status";
+
+import {
+  buildRecommendations,
+} from "./planning/build-recommendations";
+
+import {
+  buildAnalysisRows,
+} from "./planning/build-analysis-rows";
+
+import {
+  buildDataSources,
+} from "./planning/build-data-sources";
 
 type PlanningAssessmentInput = {
   projectAreaM2: number;
@@ -38,12 +57,18 @@ type PlanningAssessmentInput = {
   terrain: TerrainAnalysis | null;
 };
 
-function formatArea(areaM2: number) {
+function formatArea(
+  areaM2: number
+) {
   if (areaM2 < 10_000) {
-    return `${Math.round(areaM2).toLocaleString()} m²`;
+    return `${Math.round(
+      areaM2
+    ).toLocaleString()} m²`;
   }
 
-  return `${(areaM2 / 10_000).toFixed(2)} ha`;
+  return `${(
+    areaM2 / 10_000
+  ).toFixed(2)} ha`;
 }
 
 export function buildPlanningAssessment({
@@ -69,24 +94,49 @@ export function buildPlanningAssessment({
   hazards,
   terrain,
 }: PlanningAssessmentInput): PlanningAssessment {
-  const floodStatus = getHazardStatus(hazards.flood);
-  const tsunamiStatus = getHazardStatus(hazards.tsunami);
-  const landslideStatus = getHazardStatus(hazards.landslide);
+  // =========================================================
+  // HAZARD STATUS
+  // =========================================================
+
+  const floodStatus =
+    getHazardStatus(
+      hazards.flood
+    );
+
+  const tsunamiStatus =
+    getHazardStatus(
+      hazards.tsunami
+    );
+
+  const landslideStatus =
+    getHazardStatus(
+      hazards.landslide
+    );
 
   const floodPresent =
-    isHazardPresent(floodStatus);
+    isHazardPresent(
+      floodStatus
+    );
 
   const tsunamiPresent =
-    isHazardPresent(tsunamiStatus);
+    isHazardPresent(
+      tsunamiStatus
+    );
 
   const landslidePresent =
-    isHazardPresent(landslideStatus);
+    isHazardPresent(
+      landslideStatus
+    );
 
   const mappedHazardCount = [
     floodPresent,
     tsunamiPresent,
     landslidePresent,
   ].filter(Boolean).length;
+
+  // =========================================================
+  // SURFACE CHANGE
+  // =========================================================
 
   const imperviousChange =
     imperviousPercent -
@@ -96,9 +146,6 @@ export function buildPlanningAssessment({
     greenPercent -
     baselineGreenPercent;
 
-  const terrainContext =
-    buildTerrainContext(terrain);
-
   const improvesSurfaceCondition =
     imperviousChange <= -10 ||
     greenChange >= 10;
@@ -106,6 +153,15 @@ export function buildPlanningAssessment({
   const worsensSurfaceCondition =
     imperviousChange >= 10 ||
     greenChange <= -10;
+
+  // =========================================================
+  // TERRAIN
+  // =========================================================
+
+  const terrainContext =
+    buildTerrainContext(
+      terrain
+    );
 
   const {
     lowLying,
@@ -115,72 +171,96 @@ export function buildPlanningAssessment({
     steep: steepTerrain,
   } = terrainContext;
 
+  // =========================================================
+  // FINDINGS
+  // =========================================================
 
-  const findings = buildFindings({
-    hazards,
+  const findings =
+    buildFindings({
+      baselineImperviousPercent,
+      imperviousPercent,
 
-    floodStatus,
-    tsunamiStatus,
-    landslideStatus,
+      baselineGreenPercent,
+      greenPercent,
 
-    terrain,
+      runoffCurrent,
+      runoffProposed,
+      runoffMitigated,
 
-    imperviousPercent,
-    baselineImperviousPercent,
-
-    greenPercent,
-    baselineGreenPercent,
-
-    additionalPopulation,
-
-    runoffChangePercent,
-    mitigationReductionPercent,
-  });
-
-  const topFindings = findings.slice(0, 3);
-
-  const recommendations =
-    buildRecommendations({
       floodStatus,
       tsunamiStatus,
       landslideStatus,
 
       terrain,
 
-      runoffChangePercent,
-      mitigationReductionPercent,
-
-      imperviousPercent,
-      greenPercent,
+      nearbyPopulation,
+      additionalPopulation,
     });
 
-  const analysisRows = buildAnalysisRows({
-    imperviousPercent,
-    baselineImperviousPercent,
+  const topFindings =
+    findings.slice(0, 3);
 
-    greenPercent,
-    baselineGreenPercent,
+  // =========================================================
+  // RECOMMENDATIONS
+  // =========================================================
 
-    runoffCurrent,
-    runoffMitigated,
-    runoffProposed,
+  const recommendations =
+  buildRecommendations({
+    floodStatus,
+    tsunamiStatus,
+    landslideStatus,
 
-    hazards,
     terrain,
-    nearbyPopulation,
-    additionalPopulation
+
+    runoffChangePercent,
+    mitigationReductionPercent,
+
+    imperviousPercent,
+    greenPercent,
   });
 
-  const dataSources = buildDataSources(hazards);
+  // =========================================================
+  // ANALYSIS ROWS
+  // =========================================================
 
-  /*
-  * ==========================================================
-  * PRIMARY ASSESSMENT
-  * Prioritize compound site conditions, then individual hazards
-  * ==========================================================
-  */
+  const analysisRows =
+    buildAnalysisRows({
+      baselineImperviousPercent,
+      imperviousPercent,
 
-  let status: PlanningAssessment["status"] = "low";
+      baselineGreenPercent,
+      greenPercent,
+
+      runoffCurrent,
+      runoffProposed,
+      runoffMitigated,
+
+      floodStatus,
+      tsunamiStatus,
+      landslideStatus,
+
+      terrain,
+
+      nearbyPopulation,
+      additionalPopulation,
+    });
+
+  // =========================================================
+  // DATA SOURCES
+  // =========================================================
+
+  const dataSources =
+    buildDataSources(
+      hazards
+    );
+
+  // =========================================================
+  // PRIMARY ASSESSMENT
+  // =========================================================
+
+  let status:
+    PlanningAssessment["status"] =
+    "low";
 
   let headline =
     "No major mapped hazard signal identified";
@@ -196,12 +276,9 @@ export function buildPlanningAssessment({
   let recommendedAction =
     "Review the proposed land allocation and maintain adequate green and permeable surface.";
 
-  /*
-  * ----------------------------------------------------------
-  * 1. LANDSLIDE + STEEP TERRAIN
-  * Strong spatial interaction: mapped hazard + terrain evidence
-  * ----------------------------------------------------------
-  */
+  // =========================================================
+  // 1. LANDSLIDE + STEEP TERRAIN
+  // =========================================================
 
   if (
     landslidePresent &&
@@ -211,7 +288,8 @@ export function buildPlanningAssessment({
     status = "review";
 
     headline =
-      floodPresent || tsunamiPresent
+      floodPresent ||
+      tsunamiPresent
         ? "Steep terrain strengthens landslide sensitivity within a multi-hazard site"
         : "Mapped landslide exposure coincides with steep terrain";
 
@@ -235,12 +313,9 @@ export function buildPlanningAssessment({
       "Limit unnecessary cut-and-fill, control concentrated runoff, and undertake site-specific geotechnical assessment before detailed design.";
   }
 
-
-  /*
-  * ----------------------------------------------------------
-  * 2. TSUNAMI + VERY LOW / LOW TERRAIN
-  * ----------------------------------------------------------
-  */
+  // =========================================================
+  // 2. TSUNAMI + VERY LOW TERRAIN
+  // =========================================================
 
   else if (
     tsunamiPresent &&
@@ -270,11 +345,9 @@ export function buildPlanningAssessment({
       "Review site suitability, evacuation-route continuity, access to higher ground, and vertical evacuation options.";
   }
 
-  /*
-  * ----------------------------------------------------------
-  * 3. FLOOD + LOW/FLAT TERRAIN + RUNOFF INCREASE
-  * ----------------------------------------------------------
-  */
+  // =========================================================
+  // 3. FLOOD + LOW / FLAT + RUNOFF INCREASE
+  // =========================================================
 
   else if (
     floodPresent &&
@@ -283,7 +356,8 @@ export function buildPlanningAssessment({
     flatTerrain &&
     terrain
   ) {
-    status = "attention";
+    status =
+      "attention";
 
     headline =
       "Development may amplify runoff on a low-lying flood-sensitive site";
@@ -304,11 +378,9 @@ export function buildPlanningAssessment({
       "Reduce paved surfaces, preserve infiltration capacity, and review drainage gradients, finished-floor elevation, and on-site retention.";
   }
 
-  /*
-  * ----------------------------------------------------------
-  * 4. FLOOD + LANDSLIDE ON SLOPING TERRAIN
-  * ----------------------------------------------------------
-  */
+  // =========================================================
+  // 4. FLOOD + LANDSLIDE
+  // =========================================================
 
   else if (
     floodPresent &&
@@ -316,7 +388,8 @@ export function buildPlanningAssessment({
     slopingTerrain &&
     terrain
   ) {
-    status = "review";
+    status =
+      "review";
 
     headline =
       "Runoff and slope stability require coordinated review";
@@ -335,11 +408,9 @@ export function buildPlanningAssessment({
       "Control runoff pathways, minimize unnecessary grading, and review geotechnical and drainage conditions together.";
   }
 
-  /*
-  * ----------------------------------------------------------
-  * 5. FLOOD + TSUNAMI
-  * ----------------------------------------------------------
-  */
+  // =========================================================
+  // 5. FLOOD + TSUNAMI + IMPROVING DESIGN
+  // =========================================================
 
   else if (
     floodPresent &&
@@ -347,7 +418,8 @@ export function buildPlanningAssessment({
     improvesSurfaceCondition &&
     runoffChangePercent < 0
   ) {
-    status = "review";
+    status =
+      "review";
 
     headline =
       "Surface design improves runoff conditions, but tsunami exposure remains";
@@ -368,40 +440,48 @@ export function buildPlanningAssessment({
       "Retain the improved surface design while separately reviewing evacuation access, site suitability, and vertical evacuation options for tsunami exposure.";
   }
 
+  // =========================================================
+  // 6. FLOOD + TSUNAMI
+  // =========================================================
+
   else if (
     floodPresent &&
     tsunamiPresent
   ) {
-    status = "review";
+    status =
+      "review";
 
     headline =
       "Flood-sensitive development with tsunami exposure";
+
+    summary =
+      `The ${formatArea(
+        projectAreaM2
+      )} proposed footprint contains mapped flood and tsunami hazard values. Stormwater and tsunami exposure require different planning responses.`;
 
     primaryConcern =
       "Stormwater management and evacuation exposure";
 
     recommendedAction =
       "Reduce development-induced runoff while separately reviewing evacuation access and site suitability for tsunami exposure.";
-
-    summary =
-      `The ${formatArea(
-        projectAreaM2
-      )} proposed footprint contains mapped flood and tsunami hazard values. Stormwater and tsunami exposure require different planning responses.`;
   }
 
-  /*
-  * ----------------------------------------------------------
-  * 6. GENERIC MULTI-HAZARD
-  * ----------------------------------------------------------
-  */
+  // =========================================================
+  // 7. GENERIC MULTI-HAZARD
+  // =========================================================
 
-  else if (mappedHazardCount >= 2) {
-    status = "review";
+  else if (
+    mappedHazardCount >= 2
+  ) {
+    status =
+      "review";
 
     const hazardNames = [
       floodPresent && "flood",
-      tsunamiPresent && "tsunami",
-      landslidePresent && "landslide",
+      tsunamiPresent &&
+        "tsunami",
+      landslidePresent &&
+        "landslide",
     ].filter(Boolean);
 
     headline =
@@ -421,14 +501,15 @@ export function buildPlanningAssessment({
       "Review each mapped hazard separately and apply hazard-specific planning controls.";
   }
 
-  /*
-  * ----------------------------------------------------------
-  * 7. TSUNAMI ONLY
-  * ----------------------------------------------------------
-  */
+  // =========================================================
+  // 8. TSUNAMI ONLY
+  // =========================================================
 
-  else if (tsunamiPresent) {
-    status = "review";
+  else if (
+    tsunamiPresent
+  ) {
+    status =
+      "review";
 
     headline =
       "Tsunami exposure requires siting and evacuation review";
@@ -445,18 +526,17 @@ export function buildPlanningAssessment({
       "Review evacuation access, vertical evacuation options, and whether the proposed use is appropriate for the site.";
   }
 
-  /*
-  * ----------------------------------------------------------
-  * BASELINE IMPROVEMENT WITH FLOOD CONTEXT
-  * ----------------------------------------------------------
-  */
+  // =========================================================
+  // 9. FLOOD + IMPROVED DESIGN
+  // =========================================================
 
   else if (
     floodPresent &&
     improvesSurfaceCondition &&
     runoffChangePercent < 0
   ) {
-    status = "attention";
+    status =
+      "attention";
 
     headline =
       "Proposal improves surface conditions within a flood-sensitive site";
@@ -477,12 +557,17 @@ export function buildPlanningAssessment({
       "Retain the proposed reduction in sealed surface and increased green space while continuing to review drainage, finished-floor elevation, and residual flood exposure.";
   }
 
+  // =========================================================
+  // 10. NO HAZARD + IMPROVED DESIGN
+  // =========================================================
+
   else if (
     mappedHazardCount === 0 &&
     improvesSurfaceCondition &&
     runoffChangePercent < -5
   ) {
-    status = "low";
+    status =
+      "low";
 
     headline =
       "Proposal improves surface conditions relative to the existing site";
@@ -501,27 +586,26 @@ export function buildPlanningAssessment({
       "Retain the proposed reduction in sealed surface and protect planned green and permeable areas through detailed design.";
   }
 
-  /*
-  * ----------------------------------------------------------
-  * 8. FLOOD + RUNOFF INCREASE
-  * ----------------------------------------------------------
-  */
+  // =========================================================
+  // 11. FLOOD + RUNOFF INCREASE
+  // =========================================================
 
   else if (
     floodPresent &&
     runoffChangePercent > 10
   ) {
-    status = "attention";
+    status =
+      "attention";
 
     headline =
       "Development may amplify runoff in a mapped flood-hazard area";
 
     summary =
-    `The proposed design increases impervious cover from an existing mapped built-up proxy of approximately ${baselineImperviousPercent.toFixed(
-      0
-    )}% to ${imperviousPercent}%, contributing to a ${runoffChangePercent.toFixed(
-      1
-    )}% increase in comparative runoff pressure within a mapped flood-hazard footprint.`;
+      `The proposed design increases impervious cover from an existing mapped built-up proxy of approximately ${baselineImperviousPercent.toFixed(
+        0
+      )}% to ${imperviousPercent}%, contributing to a ${runoffChangePercent.toFixed(
+        1
+      )}% increase in comparative runoff pressure within a mapped flood-hazard footprint.`;
 
     primaryConcern =
       "Increased runoff within flood-sensitive context";
@@ -530,14 +614,15 @@ export function buildPlanningAssessment({
       "Reduce paved or sealed surfaces and strengthen infiltration or retention measures.";
   }
 
-  /*
-  * ----------------------------------------------------------
-  * 9. LANDSLIDE ONLY
-  * ----------------------------------------------------------
-  */
+  // =========================================================
+  // 12. LANDSLIDE ONLY
+  // =========================================================
 
-  else if (landslidePresent) {
-    status = "review";
+  else if (
+    landslidePresent
+  ) {
+    status =
+      "review";
 
     headline =
       "Landslide exposure requires slope-sensitive review";
@@ -554,18 +639,17 @@ export function buildPlanningAssessment({
       "Review slope conditions, drainage pathways, and geotechnical requirements before development.";
   }
 
-  /*
-  * ----------------------------------------------------------
-  * 10. TERRAIN ONLY
-  * ----------------------------------------------------------
-  */
+  // =========================================================
+  // 13. TERRAIN ONLY
+  // =========================================================
 
   else if (
     mappedHazardCount === 0 &&
     steepTerrain &&
     terrain
   ) {
-    status = "review";
+    status =
+      "review";
 
     headline =
       "Steep terrain warrants additional site review";
@@ -584,12 +668,17 @@ export function buildPlanningAssessment({
       "Review grading, drainage, access, and geotechnical conditions before detailed development.";
   }
 
+  // =========================================================
+  // 14. WORSENED SURFACE CONDITION
+  // =========================================================
+
   else if (
     mappedHazardCount === 0 &&
     worsensSurfaceCondition &&
     runoffChangePercent > 5
   ) {
-    status = "attention";
+    status =
+      "attention";
 
     headline =
       "Proposal intensifies surface development relative to the existing site";
@@ -606,14 +695,15 @@ export function buildPlanningAssessment({
       "Reduce unnecessary sealed surface, preserve existing vegetation where feasible, and introduce infiltration or retention measures.";
   }
 
-  /*
-  * ----------------------------------------------------------
-  * 11. RUNOFF CHANGE WITHOUT MAPPED HAZARD
-  * ----------------------------------------------------------
-  */
+  // =========================================================
+  // 15. RUNOFF CHANGE WITHOUT MAPPED HAZARD
+  // =========================================================
 
-  else if (runoffChangePercent > 10) {
-    status = "attention";
+  else if (
+    runoffChangePercent > 10
+  ) {
+    status =
+      "attention";
 
     headline =
       "Development substantially increases runoff pressure";
@@ -635,13 +725,17 @@ export function buildPlanningAssessment({
 
     verdict: {
       headline,
-      action: recommendedAction,
+      action:
+        recommendedAction,
     },
 
     site: {
-      flood: floodStatus,
-      tsunami: tsunamiStatus,
-      landslide: landslideStatus,
+      flood:
+        floodStatus,
+      tsunami:
+        tsunamiStatus,
+      landslide:
+        landslideStatus,
     },
 
     findings,
