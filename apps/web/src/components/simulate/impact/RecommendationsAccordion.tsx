@@ -1,84 +1,60 @@
-import type {
-  Recommendation,
-} from "@/types/simulation";
+import type { Recommendation } from "@/types/simulation";
 
 import ImpactAccordion from "./ImpactAccordion";
 
 type Props = {
   recommendations: Recommendation[];
-
   open: boolean;
   onToggle: () => void;
 };
+
+const GROUPS = [
+  { key: "before-build", title: "Before you build" },
+  { key: "design", title: "In the design" },
+  { key: "expert-review", title: "Check with experts" },
+] as const;
+
+const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 } as const;
 
 export default function RecommendationsAccordion({
   recommendations,
   open,
   onToggle,
 }: Props) {
-  const groups = [
-    {
-        key: "before-build",
-        title: "Before you build",
-    },
-    {
-        key: "design",
-        title: "In the design",
-    },
-    {
-        key: "expert-review",
-        title: "Check with experts",
-    },
-    ] as const;
-
   return (
-    <ImpactAccordion
-      title="Recommendations"
-      open={open}
-      onToggle={onToggle}
-    >
+    <ImpactAccordion title="Recommendations" open={open} onToggle={onToggle}>
       <div className="space-y-4">
-        {groups.map((group) => {
-          const items =
-            recommendations.filter(
-              (item) =>
-                item.group === group.key
+        {GROUPS.map((group) => {
+          const items = recommendations
+            .filter((item) => item.group === group.key)
+            .sort(
+              (a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
             );
 
-          if (items.length === 0) {
-            return null;
-          }
+          if (items.length === 0) return null;
 
           return (
             <div key={group.key}>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                {group.title}
-              </p>
+              <p className="text-xs font-medium text-slate-600">{group.title}</p>
 
-              <div className="mt-2 space-y-2">
+              <ul className="mt-2 space-y-2">
                 {items.map((item) => (
-                  <div
+                  <li
                     key={item.id}
-                    className="flex items-start gap-2"
+                    className="flex items-start justify-between gap-3"
                   >
-                    <span
-                      className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
-                        item.priority ===
-                        "high"
-                          ? "bg-red-500"
-                          : item.priority ===
-                              "medium"
-                            ? "bg-amber-500"
-                            : "bg-blue-500"
-                      }`}
-                    />
-
-                    <p className="text-xs leading-5 text-slate-700">
+                    <p className="text-sm leading-5 text-slate-700">
                       {item.text}
                     </p>
-                  </div>
+
+                    {item.priority === "high" && (
+                      <span className="shrink-0 rounded-md bg-red-50 px-1.5 py-0.5 text-xs font-medium text-red-700">
+                        Priority
+                      </span>
+                    )}
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           );
         })}

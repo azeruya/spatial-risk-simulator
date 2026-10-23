@@ -1,23 +1,12 @@
-import type {
-  SimulationView,
-} from "@/types/simulation";
-
-import type {
-  SimulationResult,
-} from "@/lib/simulation";
-
-type ScenarioData = {
-  impervious: number;
-  green: number;
-  other: number;
-  permeable?: number;
-  greenInfrastructure?: number;
-  runoff: number;
-};
+import type { SimulationView } from "@/types/simulation";
+import type { SimulationResult } from "@/lib/simulation";
+import {
+  buildSurfaceMixes,
+  type SurfaceMix,
+} from "@/lib/simulation/surfaceMix";
 
 type Props = {
   simulation: SimulationResult;
-
   simulationView: SimulationView;
 
   baselineImperviousPercent: number;
@@ -27,183 +16,82 @@ type Props = {
   greenPercent: number;
 
   permeableSurfacePercent: number;
-  greenInfrastructurePercent: number;
 
   hasMitigation: boolean;
 };
 
+type Delta = { value: number; against: string };
+
 export default function ScenarioComparison({
   simulation,
   simulationView,
-
   baselineImperviousPercent,
   baselineGreenPercent,
-
   imperviousPercent,
   greenPercent,
-
   permeableSurfacePercent,
-  greenInfrastructurePercent,
-
   hasMitigation,
 }: Props) {
-  const proposedOther =
-    Math.max(
-      0,
-      100 -
-        imperviousPercent -
-        greenPercent
-    );
+  const mixes = buildSurfaceMixes({
+    baselineImperviousPercent,
+    baselineGreenPercent,
+    imperviousPercent,
+    greenPercent,
+    permeableSurfacePercent,
+  });
 
-  const current: ScenarioData = {
-    impervious:
-      baselineImperviousPercent,
-
-    green:
-      baselineGreenPercent,
-
-    other: Math.max(
-      0,
-      100 -
-        baselineImperviousPercent -
-        baselineGreenPercent
-    ),
-
-    runoff:
-      simulation.baselineRunoffPressure,
-  };
-
-  const proposed: ScenarioData = {
-    impervious:
-      imperviousPercent,
-
-    green:
-      greenPercent,
-
-    other:
-      proposedOther,
-
-    runoff:
-      simulation.scenarioRunoffPressure,
-  };
-
-  const mitigatedImpervious =
-    Math.max(
-      0,
-      imperviousPercent -
-        permeableSurfacePercent
-    );
-
-  const mitigatedGreen =
-    Math.min(
-      100,
-      greenPercent +
-        greenInfrastructurePercent
-    );
-
-  const mitigatedOther =
-    Math.max(
-      0,
-      100 -
-        mitigatedImpervious -
-        mitigatedGreen -
-        permeableSurfacePercent
-    );
-
-  const mitigated: ScenarioData = {
-    impervious:
-      mitigatedImpervious,
-
-    green:
-      mitigatedGreen,
-
-    other:
-      mitigatedOther,
-
-    permeable:
-      permeableSurfacePercent,
-
-    greenInfrastructure:
-      greenInfrastructurePercent,
-
-    runoff:
-      simulation.mitigatedRunoffPressure,
-  };
+  const current = simulation.baselineRunoffPressure;
+  const proposed = simulation.scenarioRunoffPressure;
+  const mitigated = simulation.mitigatedRunoffPressure;
 
   return (
     <section>
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-xs font-medium text-slate-500">
-          About your design
-        </p>
-
-        <p className="text-[10px] text-slate-400">
-          Changes with scenario
-        </p>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-xs font-medium text-slate-600">About your design</p>
+        <p className="text-xs text-slate-500">Changes with scenario</p>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="space-y-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-3">
+        <div className="mb-1 flex justify-between px-2 text-xs text-slate-500">
+          <span>Rainwater runoff index</span>
+          <span>Change vs today</span>
+        </div>
+
+        <div className="space-y-1">
           <ScenarioRow
             label="Current"
-            data={current}
-            active={
-              simulationView ===
-              "current"
-            }
+            mix={mixes.current}
+            runoff={current}
+            active={simulationView === "current"}
           />
 
           <ScenarioRow
             label="Proposed"
-            data={proposed}
-            active={
-              simulationView ===
-              "proposed"
-            }
-            comparison={percentChange(
-              current.runoff,
-              proposed.runoff
-            )}
+            mix={mixes.proposed}
+            runoff={proposed}
+            active={simulationView === "proposed"}
+            deltas={[{ value: percentChange(current, proposed), against: "today" }]}
           />
 
           {hasMitigation && (
             <ScenarioRow
               label="Mitigated"
-              data={mitigated}
-              active={
-                simulationView ===
-                "mitigated"
-              }
-              comparison={percentChange(
-                current.runoff,
-                mitigated.runoff
-              )}
+              mix={mixes.mitigated}
+              runoff={mitigated}
+              active={simulationView === "mitigated"}
+              deltas={[
+                { value: percentChange(current, mitigated), against: "today" },
+                { value: percentChange(proposed, mitigated), against: "proposed" },
+              ]}
             />
           )}
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-500">
-          <Legend
-            color="bg-slate-600"
-            label="Paved"
-          />
-
-          <Legend
-            color="bg-green-500"
-            label="Green"
-          />
-
-          <Legend
-            color="bg-slate-300"
-            label="Other"
-          />
-
-          {hasMitigation && (
-            <Legend
-              color="bg-cyan-500"
-              label="Permeable"
-            />
-          )}
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 px-2 text-xs text-slate-600">
+          <Legend color="bg-slate-600" label="Paved" />
+          {hasMitigation && <Legend color="bg-cyan-500" label="Permeable paving" />}
+          <Legend color="bg-emerald-500" label="Green" />
+          <Legend color="bg-slate-300" label="Other" />
         </div>
       </div>
     </section>
@@ -212,134 +100,94 @@ export default function ScenarioComparison({
 
 function ScenarioRow({
   label,
-  data,
-  comparison,
+  mix,
+  runoff,
   active,
+  deltas = [],
 }: {
   label: string;
-  data: ScenarioData;
-  comparison?: number;
+  mix: SurfaceMix;
+  runoff: number;
   active: boolean;
+  deltas?: Delta[];
 }) {
-  const total =
-    data.impervious +
-    data.green +
-    data.other +
-    (data.permeable ?? 0);
+  const total = mix.impervious + mix.permeable + mix.green + mix.other;
+  const width = (value: number) => (total > 0 ? (value / total) * 100 : 0);
 
-  const normalize = (value: number) =>
-    total > 0 ? (value / total) * 100 : 0;
+  const [primary, ...secondary] = deltas;
 
   return (
-    <div
-      className={
-        active
-          ? "rounded-xl bg-slate-50 p-2"
-          : "px-2"
-      }
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-medium text-slate-800">
+    <div className={`rounded-xl p-2 ${active ? "bg-slate-50" : ""}`}>
+      <div className="flex items-baseline justify-between gap-3">
+        <span
+          className={`text-sm ${
+            active ? "font-semibold text-slate-950" : "text-slate-700"
+          }`}
+        >
           {label}
         </span>
 
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-xs text-slate-600">
-            Runoff {data.runoff.toFixed(2)}
-          </span>
-
-          {comparison !== undefined && (
-            <span
-              className={`text-xs font-semibold ${
-                comparison < 0
-                  ? "text-green-700"
-                  : comparison > 0
-                    ? "text-red-700"
-                    : "text-slate-500"
-              }`}
-            >
-              {comparison > 0 ? "+" : ""}
-              {comparison.toFixed(0)}%
+        <span className="text-xs text-slate-600">
+          {runoff.toFixed(2)}
+          {primary && <DeltaText delta={primary} />}
+          {secondary.map((delta) => (
+            <span key={delta.against} className="text-slate-500">
+              {" · "}
+              {formatDelta(delta.value)} vs {delta.against}
             </span>
-          )}
-        </div>
+          ))}
+        </span>
       </div>
 
-      <div className="mt-2 flex h-3 overflow-hidden rounded-full bg-slate-100">
-        <Segment
-          width={normalize(
-            data.impervious
-          )}
-          className="bg-slate-600"
-        />
-
-        {data.permeable ? (
-          <Segment
-            width={normalize(
-              data.permeable
-            )}
-            className="bg-cyan-500"
-          />
-        ) : null}
-
-        <Segment
-          width={normalize(data.green)}
-          className="bg-green-500"
-        />
-
-        <Segment
-          width={normalize(data.other)}
-          className="bg-slate-300"
-        />
+      <div
+        role="img"
+        aria-label={`${label}: paved ${Math.round(mix.impervious)}%, permeable ${Math.round(mix.permeable)}%, green ${Math.round(mix.green)}%, other ${Math.round(mix.other)}%`}
+        className="mt-2 flex h-3 overflow-hidden rounded-full bg-slate-100"
+      >
+        <Segment width={width(mix.impervious)} className="bg-slate-600" />
+        <Segment width={width(mix.permeable)} className="bg-cyan-500" />
+        <Segment width={width(mix.green)} className="bg-emerald-500" />
+        <Segment width={width(mix.other)} className="bg-slate-300" />
       </div>
     </div>
   );
 }
 
-function Segment({
-  width,
-  className,
-}: {
-  width: number;
-  className: string;
-}) {
-  if (width <= 0) return null;
+function DeltaText({ delta }: { delta: Delta }) {
+  const tone =
+    Math.abs(delta.value) < 0.5
+      ? "text-slate-500"
+      : delta.value < 0
+        ? "text-emerald-700"
+        : "text-red-700";
 
   return (
-    <div
-      className={className}
-      style={{
-        width: `${width}%`,
-      }}
-    />
+    <span className={`ml-1.5 font-semibold ${tone}`}>
+      {formatDelta(delta.value)}
+    </span>
   );
 }
 
-function Legend({
-  color,
-  label,
-}: {
-  color: string;
-  label: string;
-}) {
+function formatDelta(value: number) {
+  if (Math.abs(value) < 0.5) return "No change";
+  return `${value > 0 ? "+" : "-"}${Math.abs(Math.round(value))}%`;
+}
+
+function Segment({ width, className }: { width: number; className: string }) {
+  if (width <= 0) return null;
+  return <div className={className} style={{ width: `${width}%` }} />;
+}
+
+function Legend({ color, label }: { color: string; label: string }) {
   return (
     <span className="flex items-center gap-1.5">
-      <span
-        className={`h-2 w-2 rounded-full ${color}`}
-      />
+      <span className={`h-2 w-2 rounded-sm ${color}`} />
       {label}
     </span>
   );
 }
 
-function percentChange(
-  baseline: number,
-  value: number
-) {
+function percentChange(baseline: number, value: number) {
   if (baseline === 0) return 0;
-
-  return (
-    ((value - baseline) / baseline) *
-    100
-  );
+  return ((value - baseline) / baseline) * 100;
 }
