@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import MapGL, { Marker, type MapRef } from "react-map-gl/maplibre";
+import { useCallback, useEffect, useRef, useState } from "react";
+import MapGL, { Marker, ScaleControl, type MapRef } from "react-map-gl/maplibre";
 import { setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
+import { getBounds } from "@/lib/simulation/geometry";
 import type {
   Footprint,
+  HazardKey,
   HazardMapped,
   HazardOverlay,
   MapView,
@@ -20,17 +22,21 @@ import type {
 } from "@/types/simulation";
 
 import MapTopBar from "./MapTopBar";
+import MapControls from "./MapControls";
 import {
+  AnalysisAreaLabel,
   FootprintChip,
   HazardNote,
   MapHint,
   MapLegend,
   formatArea,
-} from "./MapHud"
+  type HazardNoteLevel,
+} from "./MapHud";
 import AnalysisLayers from "./layers/AnalysisLayers";
 import FootprintLayers from "./layers/FootprintLayers";
 import { useTerraDraw } from "./hooks/useTerraDraw";
 import { useTerrain } from "./hooks/useTerrain";
+import { useFitToSite } from "./hooks/useFitToSite";
 import { SATELLITE_STYLE, STREET_STYLE } from "./mapStyles";
 
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
@@ -68,6 +74,9 @@ type SimulationMapProps = {
   hazardOverlay: HazardOverlay;
   setHazardOverlay: (value: HazardOverlay) => void;
 
+  /** Optional. Lets the hazard chip show High / Moderate / Low with a scale. */
+  hazardLevels?: Partial<Record<HazardKey, HazardNoteLevel>>;
+
   /** @deprecated No longer used here. Safe to stop passing from page.tsx. */
   bearing?: number;
   /** @deprecated The map now relies on a ResizeObserver. */
@@ -103,6 +112,12 @@ function getFootprintCaption(
   return "Equivalent site area";
 }
 
+/** Radius of the analysis circle in metres, rounded to the nearest 50. */
+function getRadiusM(circle: Footprint) {
+  const { south, north } = getBounds(circle);
+  return Math.round(((north - south) / 2) * 110_574 / 50) * 50;
+}
+
 export default function SimulationMap({
   selectedSite,
   onSelectSite,
@@ -126,23 +141,20 @@ export default function SimulationMap({
   hazardPresent,
   hazardOverlay,
   setHazardOverlay,
+  hazardLevels,
 }: SimulationMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapRef | null>(null);
 
   const [mapView, setMapView] = useState<MapView>("satellite");
   const [mapReady, setMapReady] = useState(false);
+  const [rotated, setRotated] = useState(false);
+  const [parcelInView, setParcelInView] = useState(true);
 
   const isImagery = mapView !== "map";
-  const hazardHasData =
-    hazardOverlay
-      ? hazardMapped[hazardOverlay]
-      : false;
 
-  const hazardIsPresent =
-    hazardOverlay
-      ? hazardPresent[hazardOverlay]
-      : false;
+  const hazardHasData = hazardOverlay ? hazardMapped[hazardOverlay] : false;
+  const hazardIsPresent = hazardOverlay ? hazardPresent[hazardOverlay] : false;
 
   useTerrain(mapRef, mapReady, mapView === "terrain");
 
@@ -157,17 +169,28 @@ export default function SimulationMap({
     },
   });
 
+  const { fitSite, fitContext } = useFitToSite({
+    mapRef,
+    containerRef,
+    ready: mapReady,
+    footprint: projectFootprint,
+    analysisCircle,
+  });
+
+  // Keep the canvas sized to its container (panels collapsing, window resizing).
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
     let frame = 0;
-    const observer = new ResizeObserver(() => {
+    const resize = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => mapRef.current?.resize());
-    });
+    };
 
+    const observer = new ResizeObserver(resize);
     observer.observe(el);
+    resize();
 
     return () => {
       cancelAnimationFrame(frame);
@@ -175,33 +198,25 @@ export default function SimulationMap({
     };
   }, []);
 
+  // Track whether the map is rotated and whether the parcel is on screen.
+  const syncView = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    setRotated(Math.abs(map.getBearing()) > 1);
+
+    if (!projectFootprint) {
+      setParcelInView(true);
+      return;
+    }
+
+    const { west, south, east, north } = getBounds(projectFootprint);
+    setParcelInView(map.getBounds().contains([(west + east) / 2, (south + north) / 2]));
+  }, [projectFootprint]);
+
   useEffect(() => {
-    const container = containerRef.current;
-
-    if (!container) return;
-
-    let animationFrame = 0;
-
-    const resizeMap = () => {
-      cancelAnimationFrame(animationFrame);
-
-      animationFrame = requestAnimationFrame(() => {
-        mapRef.current?.resize();
-      });
-    };
-
-    const observer = new ResizeObserver(resizeMap);
-
-    observer.observe(container);
-
-    // Initial resize after mount/layout settles
-    resizeMap();
-
-    return () => {
-      cancelAnimationFrame(animationFrame);
-      observer.disconnect();
-    };
-  }, []);
+    if (mapReady) syncView();
+  }, [mapReady, syncView]);
 
   function handleMapClick(event: { lngLat: { lng: number; lat: number } }) {
     if (footprintMode === "draw") return;
@@ -213,22 +228,28 @@ export default function SimulationMap({
   }
 
   const showLegend =
-    simulationView === "current" ? selectedSite !== null : hasDefinedSite;
+    (simulationView === "current" ? selectedSite !== null : hasDefinedSite) &&
+    parcelInView;
+
+  const circleBounds = analysisCircle ? getBounds(analysisCircle) : null;
 
   return (
     <div
       ref={containerRef}
-      className="relative h-full min-h-[560px] overflow-hidden rounded-[28px] border border-slate-200 bg-slate-50"
+      className="relative h-full min-h-[560px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
     >
       <MapGL
         ref={mapRef}
         initialViewState={{ longitude: 100.3543, latitude: -0.9471, zoom: 12 }}
         style={{ width: "100%", height: "100%" }}
         mapStyle={isImagery ? SATELLITE_STYLE : STREET_STYLE}
-        cursor="crosshair"
+        cursor={footprintMode === "draw" ? undefined : "crosshair"}
         onClick={handleMapClick}
         onLoad={() => setMapReady(true)}
+        onMoveEnd={syncView}
       >
+        <ScaleControl position="bottom-left" unit="metric" maxWidth={90} />
+
         <AnalysisLayers
           analysisCircle={analysisCircle}
           hazardOverlay={hazardOverlay}
@@ -244,6 +265,17 @@ export default function SimulationMap({
           permeableSurfacePercent={permeableSurfacePercent}
           greenInfrastructurePercent={greenInfrastructurePercent}
         />
+
+        {analysisCircle && circleBounds && (
+          <Marker
+            longitude={(circleBounds.west + circleBounds.east) / 2}
+            latitude={circleBounds.north}
+            anchor="bottom"
+            style={{ pointerEvents: "none" }}
+          >
+            <AnalysisAreaLabel radiusM={getRadiusM(analysisCircle)} />
+          </Marker>
+        )}
 
         {selectedSite && footprintMode !== "draw" && (
           <Marker
@@ -274,6 +306,19 @@ export default function SimulationMap({
         )}
       </div>
 
+      <div className="pointer-events-none absolute right-4 top-20 z-30">
+        <MapControls
+          onZoomIn={() => mapRef.current?.zoomIn()}
+          onZoomOut={() => mapRef.current?.zoomOut()}
+          onFitSite={fitSite}
+          onFitContext={fitContext}
+          onResetNorth={() => mapRef.current?.resetNorth({ duration: 400 })}
+          canFitSite={projectFootprint !== null}
+          canFitContext={analysisCircle !== null}
+          rotated={rotated}
+        />
+      </div>
+
       <div className="pointer-events-none absolute inset-x-4 bottom-10 z-20 flex items-end justify-between gap-3">
         {showLegend ? (
           <MapLegend
@@ -286,7 +331,12 @@ export default function SimulationMap({
         )}
 
         {hazardOverlay && (
-          <HazardNote hazard={hazardOverlay} hasData={hazardHasData} hasHazard={hazardIsPresent}/>
+          <HazardNote
+            hazard={hazardOverlay}
+            hasData={hazardHasData}
+            hasHazard={hazardIsPresent}
+            level={hazardLevels?.[hazardOverlay]}
+          />
         )}
       </div>
     </div>
