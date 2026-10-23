@@ -1,16 +1,17 @@
 import type {
-  FootprintHazardAnalysis,
   FootprintHazards,
   PlanningAssessment,
 } from "@/types/simulation";
 
-import type {
-  TerrainAnalysis,
-} from "@/types/terrain";
+import type {TerrainAnalysis } from "@/types/terrain";
 
-import {
-  buildTerrainContext,
-} from "@/lib/planning/terrain-context";
+import {buildTerrainContext} from "@/lib/planning/terrain-context";
+import { buildFindings } from "./planning/build-findings";
+import { getHazardStatus, isHazardPresent } from "./planning/hazard-status";
+import { buildRecommendations } from "./planning/build-recommendations";
+import { buildAnalysisRows } from "./planning/build-analysis-rows";
+import { buildDataSources } from "./planning/build-data-sources";
+
 
 type PlanningAssessmentInput = {
   projectAreaM2: number;
@@ -26,20 +27,16 @@ type PlanningAssessmentInput = {
   runoffChangePercent: number;
   mitigationReductionPercent: number;
 
+  runoffCurrent: number;
+  runoffProposed: number;
+  runoffMitigated: number | null;
+
+  nearbyPopulation: number | null;
+
   hazards: FootprintHazards;
 
   terrain: TerrainAnalysis | null;
 };
-
-function hasMappedHazard(
-  hazard: FootprintHazardAnalysis | null
-) {
-  return (
-    hazard !== null &&
-    hazard.validSamples > 0 &&
-    hazard.average !== null
-  );
-}
 
 function formatArea(areaM2: number) {
   if (areaM2 < 10_000) {
@@ -47,12 +44,6 @@ function formatArea(areaM2: number) {
   }
 
   return `${(areaM2 / 10_000).toFixed(2)} ha`;
-}
-
-function formatSampleCoverage(
-  hazard: FootprintHazardAnalysis
-) {
-  return `${hazard.validSamples} of ${hazard.totalSamples} sampled locations`;
 }
 
 export function buildPlanningAssessment({
@@ -69,17 +60,27 @@ export function buildPlanningAssessment({
   runoffChangePercent,
   mitigationReductionPercent,
 
+  runoffCurrent,
+  runoffProposed,
+  runoffMitigated,
+
+  nearbyPopulation,
+
   hazards,
   terrain,
 }: PlanningAssessmentInput): PlanningAssessment {
+  const floodStatus = getHazardStatus(hazards.flood);
+  const tsunamiStatus = getHazardStatus(hazards.tsunami);
+  const landslideStatus = getHazardStatus(hazards.landslide);
+
   const floodPresent =
-    hasMappedHazard(hazards.flood);
+    isHazardPresent(floodStatus);
 
   const tsunamiPresent =
-    hasMappedHazard(hazards.tsunami);
+    isHazardPresent(tsunamiStatus);
 
   const landslidePresent =
-    hasMappedHazard(hazards.landslide);
+    isHazardPresent(landslideStatus);
 
   const mappedHazardCount = [
     floodPresent,
@@ -95,20 +96,8 @@ export function buildPlanningAssessment({
     greenPercent -
     baselineGreenPercent;
 
-  const stronglyMoreImpervious =
-    imperviousChange >= 15;
-
-  const moderatelyMoreImpervious =
-    imperviousChange >= 5;
-
-  const meaningfullyLessImpervious =
-    imperviousChange <= -10;
-
-  const majorGreenLoss =
-    greenChange <= -15;
-
-  const greenGain =
-    greenChange >= 10;
+  const terrainContext =
+    buildTerrainContext(terrain);
 
   const improvesSurfaceCondition =
     imperviousChange <= -10 ||
@@ -118,503 +107,71 @@ export function buildPlanningAssessment({
     imperviousChange >= 10 ||
     greenChange <= -10;
 
-  const highlyBuiltExistingSite =
-    baselineImperviousPercent >= 70;
-
-  const highlyVegetatedExistingSite =
-    baselineGreenPercent >= 60;
-
-  const terrainContext =
-    buildTerrainContext(terrain);
-
   const {
-    available: terrainAvailable,
     lowLying,
     veryLowLying,
     flat: flatTerrain,
     sloping: slopingTerrain,
     steep: steepTerrain,
-    highRelief,
   } = terrainContext;
 
-  /*
-   * --------------------------------
-   * User-facing reasoning sections
-   * --------------------------------
-   */
 
-  const hazard: string[] = [];
-  const change: string[] = [];
-  const consequence: string[] = [];
+  const findings = buildFindings({
+    hazards,
 
-  /*
-   * --------------------------------
-   * Raw evidence / audit trail
-   * --------------------------------
-   */
+    floodStatus,
+    tsunamiStatus,
+    landslideStatus,
 
-  const evidence: string[] = [];
+    terrain,
 
-  /*
-   * --------------------------------
-   * Planning responses
-   * --------------------------------
-   */
+    imperviousPercent,
+    baselineImperviousPercent,
 
-  const responses: string[] = [];
+    greenPercent,
+    baselineGreenPercent,
 
-  /*
-   * ==========================================================
-   * HAZARD
-   * What already exists at the site?
-   * ==========================================================
-   */
+    additionalPopulation,
 
-  if (floodPresent && hazards.flood) {
-    hazard.push(
-      "Mapped flood-hazard values are present within the proposed footprint."
-    );
+    runoffChangePercent,
+    mitigationReductionPercent,
+  });
 
-    evidence.push(
-      `Flood-hazard data was returned at ${formatSampleCoverage(
-        hazards.flood
-      )} within the footprint.`
-    );
-  }
+  const topFindings = findings.slice(0, 3);
 
-  if (
-    tsunamiPresent &&
-    hazards.tsunami
-  ) {
-    hazard.push(
-      "Mapped tsunami-hazard values are present within the proposed footprint."
-    );
+  const recommendations =
+    buildRecommendations({
+      floodStatus,
+      tsunamiStatus,
+      landslideStatus,
 
-    evidence.push(
-      `Tsunami-hazard data was returned at ${formatSampleCoverage(
-        hazards.tsunami
-      )} within the footprint.`
-    );
-  }
+      terrain,
 
-  if (
-    landslidePresent &&
-    hazards.landslide
-  ) {
-    hazard.push(
-      "Mapped landslide-hazard values are present within the proposed footprint."
-    );
+      runoffChangePercent,
+      mitigationReductionPercent,
 
-    evidence.push(
-      `Landslide-hazard data was returned at ${formatSampleCoverage(
-        hazards.landslide
-      )} within the footprint.`
-    );
-  }
+      imperviousPercent,
+      greenPercent,
+    });
 
-  if (mappedHazardCount === 0) {
-    hazard.push(
-      "No mapped flood, tsunami, or landslide values were returned within the proposed footprint."
-    );
-  }
+  const analysisRows = buildAnalysisRows({
+    imperviousPercent,
+    baselineImperviousPercent,
 
-  if (terrainAvailable && terrain) {
-    hazard.push(
-      `The proposed site has a mean elevation of ${Math.round(
-        terrain.elevation.mean
-      )} m and a mean slope of ${terrain.slope.mean.toFixed(
-        1
-      )}°.`
-    );
+    greenPercent,
+    baselineGreenPercent,
 
-    evidence.push(
-      `Terrain elevation ranges from ${Math.round(
-        terrain.elevation.min
-      )} m to ${Math.round(
-        terrain.elevation.max
-      )} m, with ${Math.round(
-        terrain.relief
-      )} m of local relief.`
-    );
-  }
+    runoffCurrent,
+    runoffMitigated,
+    runoffProposed,
 
-  evidence.push(
-    `ESA WorldCover indicates approximately ${baselineImperviousPercent.toFixed(
-      0
-    )}% built-up cover and ${baselineGreenPercent.toFixed(
-      0
-    )}% vegetated cover within the existing footprint.`
-  );
+    hazards,
+    terrain,
+    nearbyPopulation,
+    additionalPopulation
+  });
 
-  if (highlyBuiltExistingSite) {
-    evidence.push(
-      "The existing footprint is predominantly classified as built-up in the mapped land-cover baseline."
-    );
-  }
-
-  if (highlyVegetatedExistingSite) {
-    evidence.push(
-      "The existing footprint is predominantly vegetated in the mapped land-cover baseline."
-    );
-  }
-
-  /*
-   * ==========================================================
-   * CHANGE
-   * What does the proposed development alter?
-   * ==========================================================
-   */
-
-  if (imperviousChange > 0) {
-    change.push(
-      `The proposed impervious cover is ${imperviousPercent}%, compared with an existing mapped built-up proxy of ${baselineImperviousPercent.toFixed(
-        0
-      )}% (+${imperviousChange.toFixed(0)} percentage points).`
-    );
-  } else if (imperviousChange < 0) {
-    change.push(
-      `The proposed impervious cover is ${imperviousPercent}%, compared with an existing mapped built-up proxy of ${baselineImperviousPercent.toFixed(
-        0
-      )}% (${imperviousChange.toFixed(0)} percentage points).`
-    );
-  } else {
-    change.push(
-      `The proposed impervious cover is broadly similar to the existing mapped built-up proxy (${imperviousPercent}%).`
-    );
-  }
-
-  if (greenChange < 0) {
-    change.push(
-      `Proposed green and open space decreases from approximately ${baselineGreenPercent.toFixed(
-        0
-      )}% mapped vegetated cover to ${greenPercent}% (${greenChange.toFixed(
-        0
-      )} percentage points).`
-    );
-  } else if (greenChange > 0) {
-    change.push(
-      `Proposed green and open space increases from approximately ${baselineGreenPercent.toFixed(
-        0
-      )}% mapped vegetated cover to ${greenPercent}% (+${greenChange.toFixed(
-        0
-      )} percentage points).`
-    );
-  } else {
-    change.push(
-      `Proposed green and open space is broadly similar to the existing mapped vegetated cover (${greenPercent}%).`
-    );
-  }
-
-  if (additionalPopulation > 0) {
-    change.push(
-      `The proposal introduces approximately ${additionalPopulation.toLocaleString()} additional occupants.`
-    );
-  }
-
-  /*
-   * ==========================================================
-   * CONSEQUENCE
-   * Why do those changes matter in this context?
-   * ==========================================================
-   */
-
-  /*
-  * --------------------------------
-  * BASELINE → PROPOSAL CHANGE
-  * --------------------------------
-  */
-
-  if (meaningfullyLessImpervious) {
-    consequence.push(
-      `The proposal reduces developed surface relative to the mapped baseline by approximately ${Math.abs(
-        imperviousChange
-      ).toFixed(0)} percentage points, which may improve infiltration capacity compared with the existing site condition.`
-    );
-  }
-
-  if (greenGain) {
-    consequence.push(
-      `The proposal increases green and open space by approximately ${greenChange.toFixed(
-        0
-      )} percentage points relative to the mapped vegetated baseline.`
-    );
-  }
-
-  if (
-    meaningfullyLessImpervious &&
-    runoffChangePercent < 0
-  ) {
-    consequence.push(
-      `The comparative runoff-pressure indicator decreases by ${Math.abs(
-        runoffChangePercent
-      ).toFixed(
-        1
-      )}%, consistent with the proposed reduction in developed surface.`
-    );
-  }
-
-  if (
-    stronglyMoreImpervious &&
-    runoffChangePercent > 0
-  ) {
-    consequence.push(
-      `The proposed design introduces substantially more impervious surface than the mapped existing baseline, contributing to a ${runoffChangePercent.toFixed(
-        1
-      )}% increase in comparative runoff pressure.`
-    );
-  }
-
-  if (majorGreenLoss) {
-    consequence.push(
-      `The proposal removes a substantial share of the site's mapped vegetated cover, reducing potential infiltration and surface-water buffering.`
-    );
-  }
-  if (
-    floodPresent &&
-      worsensSurfaceCondition
-    ) {
-      consequence.push(
-        "The proposal worsens surface-cover conditions within an already mapped flood-sensitive footprint, increasing the importance of runoff control and infiltration measures."
-      );
-    }
-
-  if (
-    floodPresent &&
-    improvesSurfaceCondition &&
-    runoffChangePercent < 0
-  ) {
-    consequence.push(
-      "Although mapped flood hazard is present, the proposed surface configuration improves on the existing mapped baseline by reducing development intensity or increasing green space."
-    );
-  }
-
-  if (
-    floodPresent &&
-    imperviousChange > 0
-  ) {
-    consequence.push(
-      "Because the site already contains mapped flood-hazard values, increasing impervious coverage may make more rainfall become surface runoff rather than infiltrate into the ground."
-    );
-  }
-
-  if (
-    floodPresent &&
-    greenChange < 0
-  ) {
-    consequence.push(
-      "The reduction in green and permeable space further reduces the site's capacity to absorb rainfall."
-    );
-  }
-
-  if (
-    floodPresent &&
-    runoffChangePercent > 0
-  ) {
-    consequence.push(
-      `The comparative runoff-pressure indicator increases by ${runoffChangePercent.toFixed(
-        1
-      )}% under the proposed development scenario.`
-    );
-  }
-
-  if (
-    floodPresent &&
-    lowLying
-  ) {
-    consequence.push(
-      "Flood-hazard values occur within a relatively low-elevation site, increasing the importance of drainage pathways, runoff storage, and finished-floor elevation."
-    );
-  }
-
-  if (
-    floodPresent &&
-    lowLying &&
-    flatTerrain
-  ) {
-    consequence.push(
-      "The low and relatively flat terrain may limit natural drainage gradients, so surface-water management should be reviewed carefully."
-    );
-  }
-
-  if (
-    tsunamiPresent &&
-    additionalPopulation > 0
-  ) {
-    consequence.push(
-      "Additional occupants would increase the number of people located within a site where mapped tsunami-hazard values are present."
-    );
-  }
-
-  if (tsunamiPresent) {
-    consequence.push(
-      "Stormwater improvements can reduce development-induced runoff, but they do not reduce tsunami exposure."
-    );
-  }
-
-  if (
-    tsunamiPresent &&
-    veryLowLying
-  ) {
-    consequence.push(
-      "The proposed site is very low-lying within a mapped tsunami context, which increases the importance of evacuation access and vertical refuge planning."
-    );
-  }
-
-  if (landslidePresent) {
-    consequence.push(
-      "Development within mapped landslide-hazard context may require closer review of slope stability, drainage direction, and ground conditions."
-    );
-  }
-
-  if (
-    landslidePresent &&
-    slopingTerrain
-  ) {
-    consequence.push(
-      "Mapped landslide hazard coincides with sloping terrain, strengthening the need for slope-stability and drainage review."
-    );
-  }
-
-  if (
-    landslidePresent &&
-    steepTerrain
-  ) {
-    consequence.push(
-      "The site includes steep terrain within a mapped landslide context, which may increase sensitivity to cut-and-fill, drainage concentration, and slope disturbance."
-    );
-  }
-
-  if (
-    landslidePresent &&
-    highRelief
-  ) {
-    consequence.push(
-      "Substantial elevation variation within the surrounding terrain suggests that local drainage direction and slope transitions should be reviewed before detailed design."
-    );
-  }
-
-  if (
-    !floodPresent &&
-    !tsunamiPresent &&
-    !landslidePresent &&
-    runoffChangePercent > 0
-  ) {
-    consequence.push(
-      `The proposal increases comparative runoff pressure by ${runoffChangePercent.toFixed(
-        1
-      )}%, even though no mapped hazard values were returned within the footprint.`
-    );
-  }
-
-  if (
-    mitigationReductionPercent > 0
-  ) {
-    consequence.push(
-      `The selected mitigation measures reduce the comparative runoff-pressure indicator by approximately ${mitigationReductionPercent.toFixed(
-        1
-      )}%.`
-    );
-  }
-
-  /*
-   * ==========================================================
-   * PLANNING RESPONSE
-   * What should the user consider doing?
-   * ==========================================================
-   */
-
-  if (
-    improvesSurfaceCondition &&
-    runoffChangePercent < 0
-  ) {
-    responses.push(
-      "Retain the proposed reduction in sealed surface and preserve the planned green or permeable areas through detailed design."
-    );
-  }
-
-  if (
-  floodPresent &&
-    improvesSurfaceCondition &&
-    runoffChangePercent < 0
-  ) {
-    responses.push(
-      "Maintain the improved surface-water performance while still reviewing drainage capacity, finished-floor elevation, and residual flood exposure."
-    );
-  }
-
-  if (
-    floodPresent &&
-    runoffChangePercent > 0
-  ) {
-    responses.push(
-      "Reduce paved or sealed surfaces where practical and preserve infiltration capacity."
-    );
-
-    responses.push(
-      "Consider permeable paving, vegetated drainage, rain gardens, or on-site retention to manage development-induced runoff."
-    );
-  }
-
-  if (
-    floodPresent &&
-    lowLying
-  ) {
-    responses.push(
-      "Review finished-floor elevation, drainage outfalls, and temporary runoff storage relative to the surrounding terrain."
-    );
-  }
-
-  if (tsunamiPresent) {
-    responses.push(
-      "Review site placement, evacuation access, vertical evacuation options, and the suitability of the proposed occupancy for the mapped tsunami context."
-    );
-  }
-
-  if (
-    tsunamiPresent &&
-    lowLying
-  ) {
-    responses.push(
-      "Prioritize evacuation-route continuity and assess access to higher ground or vertical evacuation structures."
-    );
-  }
-
-  if (landslidePresent) {
-    responses.push(
-      "Review slope conditions and undertake site-specific geotechnical assessment before detailed development."
-    );
-
-    responses.push(
-      "Avoid concentrating additional runoff toward potentially unstable slopes."
-    );
-  }
-
-  if (
-    landslidePresent &&
-    slopingTerrain
-  ) {
-    responses.push(
-      "Minimize unnecessary cut-and-fill and avoid directing concentrated runoff toward steeper terrain."
-    );
-  }
-
-  if (
-    landslidePresent &&
-    steepTerrain
-  ) {
-    responses.push(
-      "Require site-specific geotechnical review before finalizing grading or foundation design."
-    );
-  }
-
-  if (
-    mappedHazardCount === 0 &&
-    runoffChangePercent <= 0
-  ) {
-    responses.push(
-      "Continue site-specific review and verify local physical conditions before detailed planning."
-    );
-  }
+  const dataSources = buildDataSources(hazards);
 
   /*
   * ==========================================================
@@ -1076,18 +633,28 @@ export function buildPlanningAssessment({
   return {
     status,
 
-    headline,
-    summary,
+    verdict: {
+      headline,
+      action: recommendedAction,
+    },
 
-    primaryConcern,
-    recommendedAction,
+    site: {
+      flood: floodStatus,
+      tsunami: tsunamiStatus,
+      landslide: landslideStatus,
+    },
 
-    hazard,
-    change,
-    consequence,
+    findings,
+    topFindings,
 
-    evidence,
+    recommendations,
+    analysisRows,
+    dataSources,
 
-    responses: [...new Set(responses)],
+    limitations: [
+      "Results are screening-level planning indicators.",
+      "Runoff is a comparative index, not predicted runoff volume, flood depth, or probability.",
+      "Regional hazard layers do not replace site-specific engineering assessment.",
+    ],
   };
 }

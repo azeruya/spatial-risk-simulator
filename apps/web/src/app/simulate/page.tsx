@@ -599,11 +599,19 @@ export default function SimulatePage() {
         baselineImperviousPercent ?? 0,
 
       greenPercent,
-
       baselineGreenPercent:
         baselineGreenPercent ?? 0,
 
       additionalPopulation,
+
+      runoffCurrent:
+        simulationResult.baselineRunoffPressure,
+
+      runoffProposed:
+        simulationResult.scenarioRunoffPressure,
+
+      runoffMitigated:
+        simulationResult.mitigatedRunoffPressure,
 
       runoffChangePercent:
         simulationResult.runoffChangePercent,
@@ -1269,6 +1277,13 @@ export default function SimulatePage() {
 
                 baseline={baseline}
                 simulation={simulationResult}
+
+                baselineImperviousPercent={
+                  baselineImperviousPercent ?? 0
+                }
+                baselineGreenPercent={
+                  baselineGreenPercent ?? 0
+                }
 
                 permeableSurfacePercent={
                   permeableSurfacePercent

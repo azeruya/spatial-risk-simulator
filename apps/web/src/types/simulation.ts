@@ -112,20 +112,23 @@ export type PlanningAssessmentSection = {
 };
 
 export type PlanningAssessment = {
-  status: PlanningAssessmentStatus;
+  status: "low" | "attention" | "review";
 
-  headline: string;
-  summary: string;
+  verdict: {
+    headline: string;
+    action: string;
+  };
 
-  primaryConcern: string;
-  recommendedAction: string;
+  site: SiteAssessmentSummary;
 
-  hazard: string[];
-  change: string[];
-  consequence: string[];
+  findings: Finding[];
+  topFindings: Finding[];
 
-  evidence: string[];
-  responses: string[];
+  recommendations: Recommendation[];
+  analysisRows: AnalysisRow[];
+  dataSources: DataSourceRow[];
+
+  limitations: string[];
 };
 
 export function areaToM2(
@@ -146,3 +149,63 @@ export function formatProjectArea(areaM2: number) {
 
   return `${(areaM2 / 10_000).toFixed(2)} ha`;
 }
+
+export type HazardStatus =
+  | "unavailable"
+  | "no-data"
+  | "none"
+  | "low"
+  | "moderate"
+  | "high";
+
+export type FindingSeverity =
+  | "high"
+  | "medium"
+  | "info"
+  | "good";
+
+export type FindingScope =
+  | "site"
+  | "design"
+  | "check";
+
+export type Finding = {
+  id: string;
+  severity: FindingSeverity;
+  scope: FindingScope;
+  headline: string;
+  detail: string;
+};
+
+export type RecommendationGroup =
+  | "before-build"
+  | "design"
+  | "expert-review";
+
+export type Recommendation = {
+  id: string;
+  group: RecommendationGroup;
+  priority: "high" | "medium" | "normal";
+  text: string;
+};
+
+export type AnalysisRow = {
+  label: string;
+  current?: string;
+  proposed?: string;
+  mitigated?: string;
+  value?: string;
+  change?: string;
+};
+
+export type DataSourceRow = {
+  source: string;
+  measures: string;
+  coverage?: string;
+};
+
+export type SiteAssessmentSummary = {
+  flood: HazardStatus;
+  tsunami: HazardStatus;
+  landslide: HazardStatus;
+};
