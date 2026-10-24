@@ -1,10 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+
+import BaseMap from "@/components/map/BaseMap";
+import NextStepCard from "@/components/shell/NextStepCard";
+import RailHeader, { RailStatus } from "@/components/shell/RailHeader";
+import Workspace from "@/components/shell/Workspace";
+import { useNow } from "@/hooks/useNow";
+import {
+  distanceFromStudyArea,
+  formatPotential,
+  formatRegion,
+  relativeTime,
+} from "@/lib/bmkg-format";
+import { STUDY_AREA } from "@/lib/study-area";
 import type { Earthquake } from "@/types/earthquake";
 import type { WeatherForecastResponse } from "@/types/weather";
-import BaseMap from "@/components/map/BaseMap";
+
 import StatusBadge from "../ui/StatusBadge";
 
 type LiveMapPanelProps = {
@@ -24,214 +36,150 @@ export default function LiveMapPanel({
   const [showFelt, setShowFelt] = useState(false);
   const [showLatest, setShowLatest] = useState(true);
   const [showAllEvents, setShowAllEvents] = useState(false);
+  const [selectedEarthquake, setSelectedEarthquake] =
+    useState<Earthquake | null>(null);
+
+  const now = useNow();
+
   const recentEvents = showAllEvents
     ? significantEarthquakes
     : significantEarthquakes.slice(0, 4);
-  const [selectedEarthquake, setSelectedEarthquake] =
-    useState<Earthquake | null>(null);
 
   const visibleEarthquakes = useMemo(() => {
     const items: Earthquake[] = [];
 
-    if (showSignificant) {
-        items.push(...significantEarthquakes);
-    }
-
-    if (showFelt) {
-        items.push(...feltEarthquakes);
-    }
-
-    if (showLatest) {
-        items.push(latest);
-    }
+    if (showSignificant) items.push(...significantEarthquakes);
+    if (showFelt) items.push(...feltEarthquakes);
+    if (showLatest) items.push(latest);
 
     return deduplicateEarthquakes(items);
-        }, [
-        showSignificant,
-        showFelt,
-        showLatest,
-        significantEarthquakes,
-        feltEarthquakes,
-        latest,
-    ]);
+  }, [
+    showSignificant,
+    showFelt,
+    showLatest,
+    significantEarthquakes,
+    feltEarthquakes,
+    latest,
+  ]);
 
   const currentWeather = weather.forecasts[0];
   const nextForecasts = weather.forecasts.slice(1, 5);
 
-  return (
-    <div className="flex h-full">
-      <aside className="w-80 shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-5 shadow-[6px_0_18px_rgba(15,23,42,0.05)]">
-        <div>
-          <p className="ui-section-label text-emerald-600">
-            Live
-          </p>
+  const sidebar = (
+    <div className="flex h-full flex-col">
+      <RailHeader
+        step="live"
+        title="See what is happening now."
+        description="Current earthquake and weather conditions."
+      >
+        <RailStatus step="live">BMKG data connected</RailStatus>
+      </RailHeader>
 
-          <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">
-            See what is happening now.
-          </h1>
-
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            Monitor current earthquake and environmental conditions.
-          </p>
-        </div>
-
-        <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-medium text-emerald-700">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-          BMKG data connected
-        </div>
-
-        <section className="mt-8">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Latest earthquake
-          </p>
+      <div className="ui-rail min-h-0 flex-1 overflow-y-auto border-t border-slate-100 px-5 pb-6">
+        <section className="mt-5">
+          <p className="ui-eyebrow">Latest earthquake</p>
 
           <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-3xl font-semibold">
-                  M {latest.magnitude}
-                </p>
-
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="text-3xl font-semibold">M {latest.magnitude}</p>
+                <p className="mt-1 text-xs text-slate-600">
                   Depth {latest.depthKm} km
                 </p>
               </div>
 
-              <StatusBadge tone="danger">
-                Latest
-              </StatusBadge>
+              <StatusBadge tone="danger">Latest</StatusBadge>
             </div>
 
-            <p className="mt-4 text-sm font-medium leading-5 text-slate-800">
-              {latest.region}
+            <p
+              className="mt-4 text-sm font-medium leading-5 text-slate-800"
+              title={latest.region}
+            >
+              {formatRegion(latest.region)}
+            </p>
+
+            <p className="mt-1 text-xs text-slate-600">
+              {distanceFromStudyArea(latest)}
             </p>
 
             <p className="mt-2 text-xs text-slate-500">
               {latest.date} · {latest.time}
+              {now !== null && relativeTime(latest.dateTime, now)
+                ? ` · ${relativeTime(latest.dateTime, now)}`
+                : ""}
             </p>
 
             {latest.potential && (
-              <p className="mt-3 text-xs text-slate-600">
-                {latest.potential}
+              <p
+                className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700"
+                title={latest.potential}
+              >
+                {formatPotential(latest.potential)}
               </p>
             )}
           </div>
         </section>
 
-        <section className="mt-8">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Weather forecast
-            </p>
+        <section className="mt-7">
+          <div className="flex items-center justify-between">
+            <p className="ui-eyebrow">Recent significant events</p>
 
-            {currentWeather ? (
-                <div className="mt-3 rounded-2xl border border-slate-200 p-4">
-                <div className="flex items-start justify-between gap-4">
-                    <div>
-                    <p className="text-3xl font-semibold">
-                        {currentWeather.temperatureC}°C
-                    </p>
-
-                    <p className="mt-1 text-sm font-medium text-slate-700">
-                        {currentWeather.weatherDescription}
-                    </p>
-                    </div>
-
-                    {currentWeather.imageUrl && (
-                    <img
-                        src={currentWeather.imageUrl}
-                        alt={currentWeather.weatherDescription}
-                        className="h-12 w-12"
-                    />
-                    )}
-                </div>
-
-                <p className="mt-4 text-xs text-slate-500">
-                    {weather.location.village}
-                    {weather.location.city
-                    ? `, ${weather.location.city}`
-                    : ""}
-                </p>
-
-                <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-                    <WeatherStat
-                    label="Humidity"
-                    value={`${currentWeather.humidityPercent}%`}
-                    />
-
-                    <WeatherStat
-                    label="Wind"
-                    value={`${currentWeather.windSpeedKmh} km/h ${currentWeather.windDirection}`}
-                    />
-
-                    <WeatherStat
-                    label="Cloud cover"
-                    value={
-                        currentWeather.cloudCoverPercent !== undefined
-                        ? `${currentWeather.cloudCoverPercent}%`
-                        : "—"
-                    }
-                    />
-
-                    <WeatherStat
-                    label="Rain"
-                    value={
-                        currentWeather.precipitationMm !== undefined
-                        ? `${currentWeather.precipitationMm} mm`
-                        : "—"
-                    }
-                    />
-                </div>
-
-                <p className="mt-4 text-[11px] text-slate-400">
-                    Forecast for {formatForecastTime(currentWeather.dateTime)}
-                </p>
-
-                <div className="mt-4 border-t border-slate-100 pt-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    Next periods
-                    </p>
-
-                    <div className="mt-3 grid grid-cols-4 gap-2">
-                    {nextForecasts.map((forecast) => (
-                        <div
-                        key={forecast.dateTime}
-                        className="rounded-lg bg-slate-50 p-2 text-center"
-                        >
-                        <p className="text-[11px] font-medium text-slate-500">
-                            {formatForecastHour(forecast.dateTime)}
-                        </p>
-
-                        {forecast.imageUrl && (
-                            <img
-                            src={forecast.imageUrl}
-                            alt={forecast.weatherDescription}
-                            className="mx-auto mt-1 h-7 w-7"
-                            />
-                        )}
-
-                        <p className="mt-1 text-sm font-semibold text-slate-800">
-                            {forecast.temperatureC}°
-                        </p>
-                        </div>
-                    ))}
-                    </div>
-                </div>
-
-                <p className="mt-4 text-[10px] text-slate-400">
-                    Weather data source: BMKG
-                </p>
-                </div>
-            ) : (
-                <p className="mt-3 text-sm text-slate-500">
-                Weather forecast unavailable.
-                </p>
+            {significantEarthquakes.length > 4 && (
+              <button
+                type="button"
+                onClick={() => setShowAllEvents((current) => !current)}
+                className="text-[11px] font-medium text-blue-700 hover:text-blue-800"
+              >
+                {showAllEvents ? "Show less" : "View more"}
+              </button>
             )}
+          </div>
+
+          <div className="mt-3 divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
+            {recentEvents.map((earthquake) => {
+              const isSelected = selectedEarthquake?.id === earthquake.id;
+              const ago =
+                now !== null ? relativeTime(earthquake.dateTime, now) : null;
+
+              return (
+                <button
+                  key={earthquake.id}
+                  type="button"
+                  onClick={() => setSelectedEarthquake(earthquake)}
+                  aria-pressed={isSelected}
+                  className={`w-full px-4 py-2.5 text-left transition ${
+                    isSelected ? "bg-blue-50" : "hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-900">
+                      M {earthquake.magnitude}
+                    </p>
+
+                    <span className="text-[11px] text-slate-500">
+                      {ago ?? earthquake.date}
+                    </span>
+                  </div>
+
+                  <p
+                    className="mt-1 line-clamp-1 text-xs leading-4 text-slate-700"
+                    title={earthquake.region}
+                  >
+                    {formatRegion(earthquake.region)}
+                  </p>
+
+                  <p className="mt-1 text-[11px] leading-4 text-slate-500">
+                    Depth {earthquake.depthKm} km ·{" "}
+                    {distanceFromStudyArea(earthquake)}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
         </section>
 
-        <section className="mt-8">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Layers
-          </p>
+        <section className="mt-7">
+          <p className="ui-eyebrow">Layers</p>
 
           <div className="mt-3 divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
             <LayerToggle
@@ -260,103 +208,127 @@ export default function LiveMapPanel({
           </div>
         </section>
 
-        <section className="mt-8">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Recent significant events
-            </p>
+        <section className="mt-7">
+          <p className="ui-eyebrow">Weather · {STUDY_AREA.name}</p>
 
-            {significantEarthquakes.length > 4 && (
-              <button
-                type="button"
-                onClick={() => setShowAllEvents((current) => !current)}
-                className="text-[11px] font-medium text-blue-600 hover:text-blue-700"
-              >
-                {showAllEvents ? "Show less" : "View more"}
-              </button>
-            )}
-          </div>
+          {currentWeather ? (
+            <div className="mt-3 rounded-2xl border border-slate-200 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-3xl font-semibold">
+                    {currentWeather.temperatureC}°C
+                  </p>
 
-          <div className="mt-3 divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
-            {recentEvents.map((earthquake) => {
-              const isSelected =
-                selectedEarthquake?.id === earthquake.id;
+                  <p className="mt-1 text-sm font-medium text-slate-700">
+                    {currentWeather.weatherDescription}
+                  </p>
+                </div>
 
-              return (
-                <button
-                  key={earthquake.id}
-                  type="button"
-                  onClick={() =>
-                    setSelectedEarthquake(earthquake)
+                {currentWeather.imageUrl && (
+                  <img
+                    src={currentWeather.imageUrl}
+                    alt={currentWeather.weatherDescription}
+                    className="h-12 w-12"
+                  />
+                )}
+              </div>
+
+              <p className="mt-3 text-xs text-slate-600">
+                {weather.location.village}
+                {weather.location.city ? `, ${weather.location.city}` : ""}
+                {" · "}
+                {formatForecastTime(currentWeather.dateTime)}
+              </p>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <WeatherStat
+                  label="Humidity"
+                  value={`${currentWeather.humidityPercent}%`}
+                />
+                <WeatherStat
+                  label="Wind"
+                  value={`${currentWeather.windSpeedKmh} km/h ${currentWeather.windDirection}`}
+                />
+                <WeatherStat
+                  label="Cloud cover"
+                  value={
+                    currentWeather.cloudCoverPercent !== undefined
+                      ? `${currentWeather.cloudCoverPercent}%`
+                      : "—"
                   }
-                  className={`w-full px-4 py-2.5 text-left transition ${
-                    isSelected
-                      ? "bg-blue-50"
-                      : "hover:bg-slate-50"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-slate-900">
-                      M {earthquake.magnitude}
-                    </p>
+                />
+                <WeatherStat
+                  label="Rain"
+                  value={
+                    currentWeather.precipitationMm !== undefined
+                      ? `${currentWeather.precipitationMm} mm`
+                      : "—"
+                  }
+                />
+              </div>
 
-                    <span className="text-[10px] text-slate-400">
-                      {earthquake.depthKm} km
-                    </span>
-                  </div>
+              <div className="mt-4 border-t border-slate-100 pt-4">
+                <p className="ui-eyebrow">Next periods</p>
 
-                  <p className="mt-1 line-clamp-1 text-[11px] leading-4 text-slate-600">
-                    {earthquake.region}
-                  </p>
+                <div className="mt-3 grid grid-cols-4 gap-2">
+                  {nextForecasts.map((forecast) => (
+                    <div
+                      key={forecast.dateTime}
+                      className="rounded-lg bg-slate-50 p-2 text-center"
+                    >
+                      <p className="text-[11px] font-medium text-slate-600">
+                        {formatForecastHour(forecast.dateTime)}
+                      </p>
 
-                  <p className="mt-1 text-[10px] leading-4 text-slate-400">
-                    {earthquake.date} · {earthquake.time}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
+                      {forecast.imageUrl && (
+                        <img
+                          src={forecast.imageUrl}
+                          alt={forecast.weatherDescription}
+                          className="mx-auto mt-1 h-7 w-7"
+                        />
+                      )}
+
+                      <p className="mt-1 text-sm font-semibold text-slate-800">
+                        {forecast.temperatureC}°
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-slate-600">
+              Weather forecast unavailable.
+            </p>
+          )}
         </section>
 
-        <section className="mt-8">
-          <div className="rounded-2xl bg-blue-50/70 p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-600">
-              Continue
-            </p>
-
-            <p className="mt-2 text-sm font-semibold text-slate-900">
-              Understand spatial risk in Padang
-            </p>
-
-            <p className="mt-1 text-xs leading-5 text-slate-600">
-              Move from current conditions to longer-term flood,
-              tsunami, landslide, and population exposure.
-            </p>
-
-            <Link
-              href="/risk"
-              className="mt-3 inline-flex items-center text-xs font-semibold text-blue-700 hover:text-blue-800"
-            >
-              Open Risk Intelligence →
-            </Link>
-          </div>
-        </section>
-
-        <p className="mt-6 border-t border-slate-100 pt-4 text-[10px] leading-4 text-slate-400">
-          Earthquake data: BMKG
-          <br />
-          Weather data: BMKG
+        <p className="mt-6 border-t border-slate-100 pt-4 text-[11px] leading-4 text-slate-500">
+          Earthquake and weather data: BMKG
         </p>
-      </aside>
+      </div>
 
-      <section className="min-w-0 flex-1">
-        <BaseMap 
-            earthquakes={visibleEarthquakes}
-            selectedEarthquake={selectedEarthquake}
-            onSelectEarthquake={setSelectedEarthquake} 
+      {/* Always visible: the next step never needs a long scroll. */}
+      <div className="border-t border-slate-100 bg-white p-4">
+        <NextStepCard
+          to="risk"
+          title={`Understand spatial risk in ${STUDY_AREA.name}`}
+          cta="Open Risk"
+          href="/risk"
+          compact
         />
-      </section>
+      </div>
     </div>
+  );
+
+  return (
+    <Workspace left={sidebar} leftLabel="Live conditions">
+      <BaseMap
+        earthquakes={visibleEarthquakes}
+        selectedEarthquake={selectedEarthquake}
+        onSelectEarthquake={setSelectedEarthquake}
+      />
+    </Workspace>
   );
 }
 
@@ -365,7 +337,7 @@ function LayerToggle({
   description,
   checked,
   onChange,
-  colorClass
+  colorClass,
 }: {
   label: string;
   description: string;
@@ -377,14 +349,12 @@ function LayerToggle({
     <label className="flex cursor-pointer items-center justify-between gap-4 px-4 py-2.5 transition hover:bg-slate-50">
       <div className="flex items-start gap-3">
         <span
+          aria-hidden
           className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${colorClass}`}
         />
 
         <div>
-          <p className="text-sm font-medium text-slate-800">
-            {label}
-          </p>
-
+          <p className="text-sm font-medium text-slate-800">{label}</p>
           <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
             {description}
           </p>
@@ -401,9 +371,7 @@ function LayerToggle({
   );
 }
 
-function deduplicateEarthquakes(
-  earthquakes: Earthquake[]
-): Earthquake[] {
+function deduplicateEarthquakes(earthquakes: Earthquake[]): Earthquake[] {
   const priority: Record<Earthquake["category"], number> = {
     felt: 1,
     significant: 2,
@@ -421,11 +389,7 @@ function deduplicateEarthquakes(
 
     const existing = map.get(key);
 
-    if (
-      !existing ||
-      priority[earthquake.category] >
-        priority[existing.category]
-    ) {
+    if (!existing || priority[earthquake.category] > priority[existing.category]) {
       map.set(key, earthquake);
     }
   }
@@ -433,22 +397,11 @@ function deduplicateEarthquakes(
   return Array.from(map.values());
 }
 
-function WeatherStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function WeatherStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-slate-50 px-3 py-2.5">
-      <p className="text-slate-400">
-        {label}
-      </p>
-
-      <p className="mt-1 font-medium text-slate-700">
-        {value}
-      </p>
+    <div className="rounded-xl bg-slate-50 px-3 py-2">
+      <p className="text-slate-500">{label}</p>
+      <p className="mt-0.5 font-medium text-slate-800">{value}</p>
     </div>
   );
 }
@@ -456,23 +409,21 @@ function WeatherStat({
 function formatForecastTime(dateTime: string) {
   const date = new Date(dateTime.replace(" ", "T"));
 
-  if (Number.isNaN(date.getTime())) {
-    return dateTime;
-  }
+  if (Number.isNaN(date.getTime())) return dateTime;
 
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date) + " WIB";
+  return (
+    new Intl.DateTimeFormat("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date) + " WIB"
+  );
 }
 
 function formatForecastHour(dateTime: string) {
   const date = new Date(dateTime.replace(" ", "T"));
 
-  if (Number.isNaN(date.getTime())) {
-    return dateTime;
-  }
+  if (Number.isNaN(date.getTime())) return dateTime;
 
   return new Intl.DateTimeFormat("en-US", {
     hour: "2-digit",

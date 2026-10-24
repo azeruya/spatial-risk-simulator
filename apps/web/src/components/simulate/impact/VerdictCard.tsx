@@ -28,17 +28,17 @@ export default function VerdictCard({ assessment }: Props) {
   return (
     <section
       aria-live="polite"
-      className={`rounded-2xl border p-4 ${style.wrapper}`}
+      className={`rounded-2xl border p-3.5 ${style.wrapper}`}
     >
       <p className={`text-xs font-medium ${style.text}`}>
         Verdict · {style.label}
       </p>
 
-      <h2 className="mt-1.5 text-[17px] font-semibold leading-6 text-slate-950">
+      <h2 className="mt-1 text-[15px] font-semibold leading-5 text-slate-950">
         {assessment.verdict.headline}
       </h2>
 
-      <p className="mt-1.5 text-sm leading-5 text-slate-700">
+      <p className="mt-1 text-xs leading-5 text-slate-700">
         {assessment.verdict.action}
       </p>
     </section>

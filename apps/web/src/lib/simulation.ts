@@ -197,6 +197,14 @@ export const RUNOFF_COEFFICIENTS = {
  * Approximate effectiveness assumptions for the
  * simplified mitigation model.
  */
+/** Share of remaining runoff stored on site, by retention level. */
+export const RETENTION_FACTORS = {
+  none: 0,
+  low: 0.1,
+  moderate: 0.2,
+  high: 0.3,
+} as const;
+
 export const MITIGATION_EFFECTIVENESS = {
   /**
    * Fractional reduction applied to the

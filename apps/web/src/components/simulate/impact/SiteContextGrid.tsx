@@ -1,4 +1,5 @@
 import type { HazardStatus, PlanningAssessment } from "@/types/simulation";
+import Segmented from "@/components/ui/Segmented";
 import type { TerrainAnalysis } from "@/types/terrain";
 import {
   formatHazardStatus,
@@ -106,27 +107,16 @@ export default function SiteContextGrid({
               : "Existing population"
           }
         >
-          <div
-            role="group"
-            aria-label="Analysis radius"
-            className="mt-2 inline-flex rounded-lg bg-slate-100 p-0.5"
-          >
-            {RADII.map((radius) => (
-              <button
-                key={radius}
-                type="button"
-                aria-pressed={radius === radiusMeters}
-                onClick={() => onRadiusChange(radius)}
-                className={`rounded-md px-2 py-1 text-xs font-medium transition ${
-                  radius === radiusMeters
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {formatRadius(radius)}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            label="Analysis radius"
+            options={RADII.map((radius) => ({
+              value: radius,
+              label: formatRadius(radius),
+            }))}
+            value={radiusMeters}
+            onChange={onRadiusChange}
+            className="mt-2"
+          />
         </MetricCard>
       </div>
     </section>

@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import MapGL, { Marker, ScaleControl, type MapRef } from "react-map-gl/maplibre";
-import { setWorkerUrl } from "maplibre-gl";
-import "maplibre-gl/dist/maplibre-gl.css";
+import "@/lib/maplibre-setup";
+import { STUDY_AREA } from "@/lib/study-area";
 
 import { getBounds } from "@/lib/simulation/geometry";
 import type {
@@ -39,7 +39,6 @@ import { useTerrain } from "./hooks/useTerrain";
 import { useFitToSite } from "./hooks/useFitToSite";
 import { SATELLITE_STYLE, STREET_STYLE } from "./mapStyles";
 
-setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 
 export type { SelectedSite } from "@/types/map";
 
@@ -177,6 +176,33 @@ export default function SimulationMap({
     analysisCircle,
   });
 
+  // Keep the canvas sized to its container (panels collapsing, window resizing).
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    let frame = 0;
+    const resize = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => mapRef.current?.resize());
+    };
+
+    const observer = new ResizeObserver(resize);
+    observer.observe(el);
+    resize();
+
+    // Catch late layout changes (stylesheets, fonts) that don't resize the box.
+    const late = window.setTimeout(resize, 400);
+    window.addEventListener("load", resize);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(late);
+      window.removeEventListener("load", resize);
+      observer.disconnect();
+    };
+  }, []);
+
   // Track whether the map is rotated and whether the parcel is on screen.
   const syncView = useCallback(() => {
     const map = mapRef.current;
@@ -212,58 +238,26 @@ export default function SimulationMap({
 
   const circleBounds = analysisCircle ? getBounds(analysisCircle) : null;
 
-  useLayoutEffect(() => {
-    const container = containerRef.current;
-
-    if (!container) return;
-
-    let frame = 0;
-
-    const resizeMap = () => {
-      cancelAnimationFrame(frame);
-
-      frame = requestAnimationFrame(() => {
-        mapRef.current?.resize();
-      });
-    };
-
-    const observer = new ResizeObserver(() => {
-      resizeMap();
-    });
-
-    observer.observe(container);
-
-    // Initial resize after React has committed layout.
-    resizeMap();
-
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-    };
-  }, []);
-
   return (
     <div
-  ref={containerRef}
-  className="relative h-full min-h-0 min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
->
+      ref={containerRef}
+      className="relative h-full w-full overflow-hidden bg-slate-50"
+    >
       <MapGL
         ref={mapRef}
         initialViewState={{
-    longitude: 100.3543,
-    latitude: -0.9471,
-    zoom: 12,
-  }}
-  style={{
-    position: "absolute",
-    inset: 0,
-    width: "100%",
-    height: "100%",
-  }}
+          longitude: STUDY_AREA.longitude,
+          latitude: STUDY_AREA.latitude,
+          zoom: 12,
+        }}
+        style={{ width: "100%", height: "100%" }}
         mapStyle={isImagery ? SATELLITE_STYLE : STREET_STYLE}
         cursor={footprintMode === "draw" ? undefined : "crosshair"}
         onClick={handleMapClick}
-        onLoad={() => setMapReady(true)}
+        onLoad={() => {
+          setMapReady(true);
+          mapRef.current?.resize();
+        }}
         onMoveEnd={syncView}
       >
         <ScaleControl position="bottom-left" unit="metric" maxWidth={90} />

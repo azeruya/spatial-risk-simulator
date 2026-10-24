@@ -1,17 +1,16 @@
 import { Suspense } from "react";
 
+import WorkspaceSkeleton from "@/components/shell/WorkspaceSkeleton";
+
 import SimulateClient from "./SimulateClient";
 
 // useSearchParams() in the client component needs a Suspense boundary, or
-// `next build` fails / opts the whole route out of static rendering.
+// `next build` fails. The fallback uses the same grid and rail widths as the
+// real page, so nothing shifts when it swaps in.
 export default function SimulatePage() {
   return (
     <Suspense
-      fallback={
-        <main className="flex h-[calc(100vh-64px)] items-center justify-center bg-slate-50">
-          <p className="text-sm text-slate-500">Loading simulator…</p>
-        </main>
-      }
+      fallback={<WorkspaceSkeleton right message="Loading simulator…" />}
     >
       <SimulateClient />
     </Suspense>

@@ -8,6 +8,7 @@ import {
   ScenarioType,
   RetentionLevel,
 } from "@/types/simulation";
+import RailHeader, { RailStatus } from "@/components/shell/RailHeader";
 import { AccordionSection, LiveResult } from "./scenario/ScenarioControls";
 import { SiteSection, formatPanelArea } from "./scenario/SiteSection";
 import { ProgramSection } from "./scenario/ProgramSection";
@@ -196,35 +197,20 @@ export default function ScenarioPanel({
       : null;
 
   return (
-    <aside className="flex h-full w-full flex-col border-r border-slate-200/70 bg-white">
-      <div className="px-5 pb-3 pt-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-600">
-          Inputs
-        </p>
-
-        <div className="mt-1 flex items-baseline justify-between gap-3">
-          <h1 className="text-lg font-semibold tracking-tight text-slate-950">
-            Build your scenario
-          </h1>
-
-          {stepIndex && (
-            <span className="shrink-0 text-xs text-slate-500">
-              Step {stepIndex} of {ORDER.length}
-            </span>
-          )}
-        </div>
-
+    <div className="flex h-full w-full flex-col bg-white">
+      <RailHeader
+        step="simulate"
+        title="Build your scenario"
+        aside={stepIndex ? `Step ${stepIndex} of ${ORDER.length}` : undefined}
+      >
         {siteImportedFromRisk && (
-          <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-            Site imported from Risk
-          </div>
+          <RailStatus step="simulate">Site imported from Risk</RailStatus>
         )}
-      </div>
+      </RailHeader>
 
-      <div className="mx-5 border-t border-slate-100" />
+      <div className="border-t border-slate-100" />
 
-      <div className="flex-1 overflow-y-auto px-4 pb-6 pt-4">
+      <div className="ui-rail min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4">
         <div className="space-y-3">
           <AccordionSection
             number="1"
@@ -355,6 +341,6 @@ export default function ScenarioPanel({
           )}
         </div>
       </div>
-    </aside>
+    </div>
   );
 }

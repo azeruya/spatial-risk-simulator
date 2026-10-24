@@ -56,7 +56,7 @@ export function useFitToSite({
   );
 
   const fitSite = useCallback(
-    () => fit(footprint, 0.3, 18),
+    () => fit(footprint, 0.3, 19),
     [fit, footprint]
   );
 

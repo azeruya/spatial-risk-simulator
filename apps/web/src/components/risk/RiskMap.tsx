@@ -2,13 +2,16 @@
 
 import { useMemo, useState, useEffect, useRef } from "react";
 import Map, { Marker, Source, Layer, MapRef } from "react-map-gl/maplibre";
-import { setWorkerUrl } from "maplibre-gl";
-import "maplibre-gl/dist/maplibre-gl.css";
+import "@/lib/maplibre-setup";
 import { circle } from "@turf/circle";
 import bbox from "@turf/bbox";
 
 import RiskMapControls from "./RiskMapControls";
 import RiskAnalysisPanel from "./RiskAnalysisPanel";
+import RiskSidebar from "./RiskSidebar";
+import Workspace from "@/components/shell/Workspace";
+import { useMapResize } from "@/hooks/useMapResize";
+import { STUDY_AREA } from "@/lib/study-area";
 
 import type {
   SelectedPoint,
@@ -28,8 +31,6 @@ import type {
   TerrainAnalysis,
 } from "@/types/terrain";
 
-
-setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 
 const OVERLAY_STYLE = {
   flood: {
@@ -135,6 +136,14 @@ export default function RiskMap() {
     useState(false);
 
   const mapRef = useRef<MapRef | null>(null);
+  const containerRef = useMapResize(mapRef);
+
+  // Bump to re-run every check for the selected site.
+  const [retryNonce, setRetryNonce] = useState(0);
+
+  // Cancels the previous click's point requests, so a slow first click can
+  // never overwrite the results of a newer one.
+  const pointController = useRef<AbortController | null>(null);
 
   const [riskOverlay, setRiskOverlay] =
     useState<RiskOverlay>("none");
@@ -275,7 +284,7 @@ export default function RiskMap() {
     return () => {
       controller.abort();
     };
-  }, [analysisCircle]);
+  }, [analysisCircle, retryNonce]);
 
   useEffect(() => {
     if (!analysisCircle) {
@@ -360,7 +369,7 @@ export default function RiskMap() {
     return () => {
       controller.abort();
     };
-  }, [analysisCircle, analysisAreaKm2]);
+  }, [analysisCircle, analysisAreaKm2, retryNonce]);
 
   useEffect(() => {
     if (!selectedPoint) {
@@ -431,7 +440,10 @@ export default function RiskMap() {
         setTerrainAnalysis(null);
         setTerrainError(true);
       } finally {
-        setTerrainLoading(false);
+        // An aborted request must not clear the newer request's loading flag.
+        if (!controller.signal.aborted) {
+          setTerrainLoading(false);
+        }
       }
     }
 
@@ -440,7 +452,7 @@ export default function RiskMap() {
     return () => {
       controller.abort();
     };
-  }, [selectedPoint, radius]);
+  }, [selectedPoint, radius, retryNonce]);
 
   useEffect(() => {
     const map = mapRef.current?.getMap();
@@ -490,15 +502,44 @@ export default function RiskMap() {
     };
   }, [terrainEnabled]);
 
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      mapRef.current?.resize();
-    }, 250);
+  // Arriving from Simulate ("Back to risk") with ?lat=&lon=: restore that site.
+  const mapLoaded = useRef(false);
+  const pendingTarget = useRef<SelectedPoint | null>(null);
 
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [hasSelectedPoint]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const lat = Number(params.get("lat"));
+    const lon = Number(params.get("lon"));
+
+    if (
+      !params.has("lat") ||
+      !params.has("lon") ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon) ||
+      Math.abs(lat) > 90 ||
+      Math.abs(lon) > 180
+    ) {
+      return;
+    }
+
+    const point = { longitude: lon, latitude: lat };
+
+    setSelectedPoint(point);
+    loadPointHazards(point);
+
+    if (mapLoaded.current) {
+      mapRef.current?.flyTo({ center: [lon, lat], zoom: 14, duration: 800 });
+    } else {
+      pendingTarget.current = point;
+    }
+    // Runs once on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Abort any in-flight point requests when the page unmounts.
+  useEffect(() => {
+    return () => pointController.current?.abort();
+  }, []);
 
   function handleMapClick(event: {
     lngLat: {
@@ -509,30 +550,17 @@ export default function RiskMap() {
     const longitude = event.lngLat.lng;
     const latitude = event.lngLat.lat;
 
-    setSelectedPoint({
-      longitude,
-      latitude,
-    });
+    const point = { longitude, latitude };
 
-    // Set ALL rows to loading BEFORE starting requests
-    setHazards({
-      flood: {
-        ...createIdleHazard(),
-        status: "loading",
-      },
-      tsunami: {
-        ...createIdleHazard(),
-        status: "loading",
-      },
-      landslide: {
-        ...createIdleHazard(),
-        status: "loading",
-      },
-      earthquake: {
-        ...createIdleHazard(),
-        status: "loading",
-      },
-    });
+    setSelectedPoint(point);
+    loadPointHazards(point);
+  }
+
+  function loadPointHazards(point: SelectedPoint) {
+    pointController.current?.abort();
+
+    const controller = new AbortController();
+    pointController.current = controller;
 
     const hazardTypes: HazardType[] = [
       "flood",
@@ -541,34 +569,46 @@ export default function RiskMap() {
       "earthquake",
     ];
 
+    setHazards({
+      flood: { ...createIdleHazard(), status: "loading" },
+      tsunami: { ...createIdleHazard(), status: "loading" },
+      landslide: { ...createIdleHazard(), status: "loading" },
+      earthquake: { ...createIdleHazard(), status: "loading" },
+    });
+
     hazardTypes.forEach((type) => {
-      fetchHazard(
-        type,
-        longitude,
-        latitude
-      )
+      fetchHazard(type, point.longitude, point.latitude, controller.signal)
         .then((result) => {
+          if (controller.signal.aborted) return;
+
           setHazards((current) => ({
             ...current,
             [type]: {
               ...result,
-              status: result.hasData
-                ? "success"
-                : "no-data",
+              status: result.hasData ? "success" : "no-data",
             },
           }));
         })
         .catch(() => {
+          if (controller.signal.aborted) return;
+
           setHazards((current) => ({
             ...current,
             [type]: {
               ...createIdleHazard(),
-              status: "error",
+              // Was "error", which the UI didn't recognise and showed as
+              // "No mapped data". "unavailable" is what it handles.
+              status: "unavailable",
               error: "Service unavailable",
             },
           }));
         });
     });
+  }
+
+  function retryAnalysis() {
+    if (selectedPoint) loadPointHazards(selectedPoint);
+    setRetryNonce((n) => n + 1);
   }
 
   const mappedAreaHazards = (
@@ -615,17 +655,35 @@ export default function RiskMap() {
         ? "Mapped hazard values are present around the selected site and should be considered before development."
         : "Current mapped data does not identify a clear surrounding hazard concern for this site.";
 
-  return (
-    <div className="relative flex h-full overflow-hidden bg-slate-50">
+  const analysisPanel = selectedPoint ? (
+    <RiskAnalysisPanel
+      selectedPoint={selectedPoint}
+      radius={radius}
+      setRadius={setRadius}
+      hazards={hazards}
+      areaHazards={areaHazards}
+      populationExposure={populationExposure}
+      terrainAnalysis={terrainAnalysis}
+      terrainLoading={terrainLoading}
+      terrainError={terrainError}
+      hazardSummary={hazardSummary}
+      keyConcern={keyConcern}
+      onRetry={retryAnalysis}
+    />
+  ) : null;
 
-      {/* =========================================================
-          MAP
-      ========================================================= */}
-      <div className="relative min-w-0 flex-1 transition-[width] duration-300 ease-out">
+  return (
+    <Workspace
+      left={<RiskSidebar hasSelection={hasSelectedPoint} />}
+      leftLabel="Study area"
+      right={analysisPanel}
+      rightLabel="Site analysis"
+    >
+      <div ref={containerRef} className="relative h-full w-full">
         <Map
           initialViewState={{
-            longitude: 100.3543,
-            latitude: -0.9471,
+            longitude: STUDY_AREA.longitude,
+            latitude: STUDY_AREA.latitude,
             zoom: 10,
           }}
           style={{
@@ -634,6 +692,19 @@ export default function RiskMap() {
           }}
           mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
           onClick={handleMapClick}
+          onLoad={() => {
+            mapLoaded.current = true;
+            mapRef.current?.resize();
+
+            const target = pendingTarget.current;
+            if (target) {
+              pendingTarget.current = null;
+              mapRef.current?.jumpTo({
+                center: [target.longitude, target.latitude],
+                zoom: 14,
+              });
+            }
+          }}
           cursor="crosshair"
           ref={mapRef}
         >
@@ -742,56 +813,24 @@ export default function RiskMap() {
           setTerrainEnabled={setTerrainEnabled}
           riskOverlay={riskOverlay}
           setRiskOverlay={setRiskOverlay}
+          showHint={!selectedPoint}
         />
-
-        {!selectedPoint && (
-          <div
-            className="
-              pointer-events-none
-              absolute left-1/2 top-4 z-20
-              -translate-x-1/2
-              rounded-xl border border-slate-200
-              bg-white/95 px-4 py-2
-              text-xs font-medium text-slate-600
-              shadow-sm backdrop-blur
-            "
-          >
-            Click anywhere on the map to analyse a site
-          </div>
-        )}
       </div>
-
-      {/* =========================================================
-          ANALYSIS PANEL
-      ========================================================= */}
-      {selectedPoint && (
-        <RiskAnalysisPanel
-          selectedPoint={selectedPoint}
-          radius={radius}
-          setRadius={setRadius}
-          hazards={hazards}
-          areaHazards={areaHazards}
-          populationExposure={populationExposure}
-          terrainAnalysis={terrainAnalysis}
-          terrainLoading={terrainLoading}
-          terrainError={terrainError}
-          hazardSummary={hazardSummary}
-          keyConcern={keyConcern}
-        />
-      )}
-    </div>
+    </Workspace>
   );
 }
 
 async function fetchHazard(
   type: HazardType,
   longitude: number,
-  latitude: number
+  latitude: number,
+  signal?: AbortSignal
 ): Promise<HazardResult> {
   const endpoint = HAZARD_ENDPOINTS[type];
 
   const response = await fetch(
-    `${endpoint}?lon=${longitude}&lat=${latitude}`
+    `${endpoint}?lon=${longitude}&lat=${latitude}`,
+    { signal }
   );
 
   if (!response.ok) {
@@ -959,7 +998,7 @@ function HazardLegend({
   return (
     <div
       className="
-        absolute bottom-4 right-4 z-20
+        absolute bottom-10 right-4 z-20
         rounded-xl
         border border-slate-200
         bg-white/95

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import type {
@@ -34,6 +35,9 @@ const DEM_CELL_M = 30;
 type OpenSection = "recommendations" | "analysis" | "data" | "method" | null;
 
 type ImpactPanelProps = {
+  /** Where "back to Risk" goes (keeps the chosen site). */
+  riskHref?: string;
+
   projectAreaHa: number;
 
   imperviousPercent: number;
@@ -86,6 +90,7 @@ type ImpactPanelProps = {
 };
 
 export default function ImpactPanel({
+  riskHref = "/risk",
   projectAreaHa,
 
   imperviousPercent,
@@ -178,7 +183,7 @@ export default function ImpactPanel({
   }
 
   return (
-    <aside className="flex h-full w-full flex-col border-l border-slate-200 bg-white">
+    <div className="flex h-full w-full flex-col bg-white">
       <div className="flex-1 overflow-y-auto">
         {/* Stays in view so the scenario is always clear while scrolling. */}
         <div className="sticky top-0 z-10 bg-white/95 px-4 pb-2 pt-4 backdrop-blur">
@@ -187,10 +192,27 @@ export default function ImpactPanel({
             onChange={setSimulationView}
             mitigationAvailable={hasMitigation}
           />
+
+          {!hasMitigation && (
+            <p className="mt-1.5 text-[11px] leading-4 text-slate-500">
+              Add a mitigation measure in the inputs to compare “Mitigated”.
+            </p>
+          )}
         </div>
 
         <div className="space-y-4 px-4 pb-4 pt-2">
           <VerdictCard assessment={assessment} />
+
+          <ScenarioComparison
+            simulation={simulation}
+            simulationView={simulationView}
+            baselineImperviousPercent={baselineImperviousPercent}
+            baselineGreenPercent={baselineGreenPercent}
+            imperviousPercent={imperviousPercent}
+            greenPercent={greenPercent}
+            permeableSurfacePercent={permeableSurfacePercent}
+            hasMitigation={hasMitigation}
+          />
 
           <SiteContextGrid
             assessment={assessment}
@@ -203,17 +225,6 @@ export default function ImpactPanel({
             radiusMeters={analysisRadiusMeters}
             onRadiusChange={setAnalysisRadiusMeters}
             onRetry={onRetryAnalysis}
-          />
-
-          <ScenarioComparison
-            simulation={simulation}
-            simulationView={simulationView}
-            baselineImperviousPercent={baselineImperviousPercent}
-            baselineGreenPercent={baselineGreenPercent}
-            imperviousPercent={imperviousPercent}
-            greenPercent={greenPercent}
-            permeableSurfacePercent={permeableSurfacePercent}
-            hasMitigation={hasMitigation}
           />
 
           <FindingsSummary
@@ -259,7 +270,14 @@ export default function ImpactPanel({
         >
           Export report
         </button>
+
+        <Link
+          href={riskHref}
+          className="mt-2 block text-center text-xs font-medium text-slate-600 transition hover:text-slate-900"
+        >
+          ← Back to risk at this site
+        </Link>
       </div>
-    </aside>
+    </div>
   );
 }

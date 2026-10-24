@@ -18,7 +18,9 @@ import type { TerrainAnalysis } from "@/types/terrain";
 import { LandCoverAnalysis } from "@/types/land-cover";
 import type { Footprint } from "@/types/map";
 
-import { simulateDevelopment } from "@/lib/simulation";
+import { RETENTION_FACTORS, simulateDevelopment } from "@/lib/simulation";
+import Workspace from "@/components/shell/Workspace";
+import { buildLocationUrl } from "@/lib/navigation";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { createRectangleFootprint } from "@/lib/geometry";
 import { buildPlanningAssessment } from "@/lib/planning-assessment";
@@ -182,12 +184,6 @@ export default function SimulateClient() {
 
   const [footprintMode, setFootprintMode] =
     useState<FootprintMode>("draw");
-
-  const [leftPanelOpen, setLeftPanelOpen] =
-    useState(true);
-
-  const [rightPanelOpen, setRightPanelOpen] =
-    useState(true);
 
   const [areaValue, setAreaValue] =
     useState(0);
@@ -402,12 +398,7 @@ export default function SimulateClient() {
   ] = useState<250 | 500 | 1000>(500);
 
 
-  const retentionFactor = {
-    none: 0,
-    low: 0.1,
-    moderate: 0.2,
-    high: 0.3,
-  }[retentionLevel];
+  const retentionFactor = RETENTION_FACTORS[retentionLevel];
 
   const projectFootprint = useMemo(() => {
     if (footprintMode === "draw") {
@@ -1102,20 +1093,17 @@ export default function SimulateClient() {
     };
   }, [analysisFootprint, retryNonce]);
 
+  // Hand the chosen site back to Risk so going backwards doesn't lose it.
+  const riskHref = selectedSite
+    ? buildLocationUrl("/risk", selectedSite.latitude, selectedSite.longitude)
+    : "/risk";
+
   return (
-    <main className="h-[calc(100vh-64px)] bg-slate-50">
-      <div className="flex h-full min-h-0 w-full overflow-hidden">
-        {/* Workspace */}
-        
-        <div
-          className={`
-            relative shrink-0 border-r border-slate-200 bg-white
-            ${leftPanelOpen ? "w-[340px]" : "w-10"}
-          `}
-        >
-          <div className="h-full overflow-y-auto">
-            {leftPanelOpen ? (
-              <ScenarioPanel
+    <Workspace
+      leftLabel="Scenario"
+      rightLabel="Impact"
+      left={
+        <ScenarioPanel
                 scenarioType={scenarioType}
                 setScenarioType={
                   setScenarioType
@@ -1213,77 +1201,9 @@ export default function SimulateClient() {
                 siteImportedFromRisk={siteImportedFromRisk}
                 onReset={handleResetScenario}
               />
-            ) : (
-              <div className="flex h-full items-start justify-center pt-16">
-                <span className="rotate-[-90deg] whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  Scenario
-                </span>
-              </div>
-            )}
-          </div>
-          
-
-          <button
-            type="button"
-            onClick={() =>
-              setLeftPanelOpen((open) => !open)
-            }
-            className="
-              absolute right-[-14px] top-5 z-50
-              flex h-7 w-7 items-center justify-center
-              rounded-full border border-slate-200
-              bg-white text-sm text-slate-600
-              shadow-sm transition
-              hover:bg-slate-50
-            "
-            aria-label={
-              leftPanelOpen
-                ? "Collapse scenario panel"
-                : "Expand scenario panel"
-            }
-          >
-            {leftPanelOpen ? "‹" : "›"}
-          </button>
-        </div>
-
-        {/* Map */}
-        <div className="relative min-w-0 flex-1">
-          <SimulationMap
-            selectedSite={selectedSite}
-            onSelectSite={setSelectedSite}
-            projectAreaHa={projectAreaHa}
-            footprintMode={footprintMode}
-            widthM={widthM}
-            lengthM={lengthM}
-            projectFootprint={projectFootprint}
-            setDrawnFootprint={setDrawnFootprint}
-            hasDefinedSite={hasDefinedSite}
-            isDrawing={isDrawing}
-            setIsDrawing={setIsDrawing}
-            drawShape={drawShape}
-            imperviousPercent={imperviousPercent}
-            greenPercent={greenPercent}
-            permeableSurfacePercent={permeableSurfacePercent}
-            greenInfrastructurePercent={greenInfrastructurePercent}
-            retentionLevel={retentionLevel}
-            simulationView={simulationView}
-            analysisCircle={analysisCircle}
-            hazardMapped={hazardMapped}
-            hazardPresent={hazardPresent}
-            hazardOverlay={hazardOverlay}
-            setHazardOverlay={setHazardOverlay}
-          />
-        </div>
-
-       <div
-          className={`
-            relative shrink-0 border-l border-slate-200 bg-white
-            ${rightPanelOpen ? "w-[380px]" : "w-12"}
-          `}
-        >
-          <div className="h-full overflow-y-auto">
-            {rightPanelOpen ? (    
-              <ImpactPanel
+      }
+      right={
+        <ImpactPanel
                 projectAreaHa={projectAreaHa}
                 imperviousPercent={imperviousPercent}
                 greenPercent={greenPercent}
@@ -1334,40 +1254,35 @@ export default function SimulateClient() {
                 landCoverError={landCoverError}
                 simulationView={simulationView}
                 setSimulationView={setSimulationView}
+              riskHref={riskHref}
               />
-            ) : (
-              <div className="flex h-full items-start justify-center pt-16">
-                <span className="rotate-90 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  Impact
-                </span>
-              </div>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() =>
-              setRightPanelOpen((open) => !open)
-            }
-            className="
-              absolute left-[-14px] top-5 z-50
-              flex h-7 w-7 items-center justify-center
-              rounded-full border border-slate-200
-              bg-white text-sm text-slate-600
-              shadow-sm transition
-              hover:bg-slate-50
-            "
-            aria-label={
-              rightPanelOpen
-                ? "Collapse impact panel"
-                : "Expand impact panel"
-            }
-          >
-            {rightPanelOpen ? "›" : "‹"}
-          </button>
-        </div>
-
-      </div>
-    </main>
+      }
+    >
+      <SimulationMap
+            selectedSite={selectedSite}
+            onSelectSite={setSelectedSite}
+            projectAreaHa={projectAreaHa}
+            footprintMode={footprintMode}
+            widthM={widthM}
+            lengthM={lengthM}
+            projectFootprint={projectFootprint}
+            setDrawnFootprint={setDrawnFootprint}
+            hasDefinedSite={hasDefinedSite}
+            isDrawing={isDrawing}
+            setIsDrawing={setIsDrawing}
+            drawShape={drawShape}
+            imperviousPercent={imperviousPercent}
+            greenPercent={greenPercent}
+            permeableSurfacePercent={permeableSurfacePercent}
+            greenInfrastructurePercent={greenInfrastructurePercent}
+            retentionLevel={retentionLevel}
+            simulationView={simulationView}
+            analysisCircle={analysisCircle}
+            hazardMapped={hazardMapped}
+            hazardPresent={hazardPresent}
+            hazardOverlay={hazardOverlay}
+            setHazardOverlay={setHazardOverlay}
+          />
+    </Workspace>
   );
 }

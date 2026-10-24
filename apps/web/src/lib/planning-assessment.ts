@@ -116,26 +116,26 @@ export function buildPlanningAssessment({
   } = terrainContext;
 
 
-  const findings = buildFindings({
-    hazards,
+    const findings = buildFindings({
+      floodStatus,
+      tsunamiStatus,
+      landslideStatus,
 
-    floodStatus,
-    tsunamiStatus,
-    landslideStatus,
+      terrain,
 
-    terrain,
+      imperviousPercent,
+      baselineImperviousPercent,
 
-    imperviousPercent,
-    baselineImperviousPercent,
+      greenPercent,
+      baselineGreenPercent,
 
-    greenPercent,
-    baselineGreenPercent,
+      runoffCurrent,
+      runoffProposed,
+      runoffMitigated,
 
-    additionalPopulation,
-
-    runoffChangePercent,
-    mitigationReductionPercent,
-  });
+      nearbyPopulation,
+      additionalPopulation,
+    });
 
   const topFindings = findings.slice(0, 3);
 

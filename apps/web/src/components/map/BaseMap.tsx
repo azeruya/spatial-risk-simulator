@@ -3,13 +3,15 @@
 import { useEffect, useRef } from "react";
 import Map, { Marker, Popup, type MapRef } from "react-map-gl/maplibre";
 
-import { setWorkerUrl } from "maplibre-gl";
+import "@/lib/maplibre-setup";
 import type { Earthquake } from "@/types/earthquake";
-import "maplibre-gl/dist/maplibre-gl.css";
-
-setWorkerUrl(
-  "/maplibre/maplibre-gl-worker.mjs"
-);
+import { useMapResize } from "@/hooks/useMapResize";
+import {
+  distanceFromStudyArea,
+  formatPotential,
+  formatRegion,
+} from "@/lib/bmkg-format";
+import { STUDY_AREA } from "@/lib/study-area";
 
 type BaseMapProps = {
   earthquakes?: Earthquake[];
@@ -25,6 +27,7 @@ export default function BaseMap({
   onSelectEarthquake,
 }: BaseMapProps) {
   const mapRef = useRef<MapRef | null>(null);
+  const containerRef = useMapResize(mapRef);
 
   const validEarthquakes = earthquakes.filter(
     (earthquake) =>
@@ -36,28 +39,39 @@ export default function BaseMap({
         earthquake.longitude <= 180
     );
 
-  const isSelected =
-  
+  // Frame the event together with the study area, so "how far is it from
+  // Padang?" is answered by the map itself.
   useEffect(() => {
     if (!selectedEarthquake) return;
 
-    mapRef.current?.flyTo({
-        center: [
-            selectedEarthquake.longitude,
-            selectedEarthquake.latitude,
+    mapRef.current?.fitBounds(
+      [
+        [
+          Math.min(selectedEarthquake.longitude, STUDY_AREA.longitude),
+          Math.min(selectedEarthquake.latitude, STUDY_AREA.latitude),
         ],
-        zoom: 7,
+        [
+          Math.max(selectedEarthquake.longitude, STUDY_AREA.longitude),
+          Math.max(selectedEarthquake.latitude, STUDY_AREA.latitude),
+        ],
+      ],
+      {
+        padding: { top: 220, bottom: 80, left: 80, right: 80 },
+        maxZoom: 8,
         duration: 1200,
-    });
-    }, [selectedEarthquake]);
+      }
+    );
+  }, [selectedEarthquake]);
 
   return (
+    <div ref={containerRef} className="h-full w-full">
     <Map
       ref={mapRef}
       initialViewState={{
-        longitude: 118,
-        latitude: -2,
-        zoom: 4.5,
+        // Sumatra, with the study area in the middle of the frame.
+        longitude: STUDY_AREA.longitude,
+        latitude: STUDY_AREA.latitude - 1.2,
+        zoom: 5.2,
       }}
       style={{
         width: "100%",
@@ -65,6 +79,21 @@ export default function BaseMap({
       }}
       mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
     >
+      {/* Study area anchor: the point the next two steps are about */}
+      <Marker
+        longitude={STUDY_AREA.longitude}
+        latitude={STUDY_AREA.latitude}
+        anchor="center"
+        style={{ zIndex: 10, pointerEvents: "none" }}
+      >
+        <div className="flex flex-col items-center">
+          <span className="h-3 w-3 rounded-full border-2 border-white bg-slate-900 shadow" />
+          <span className="mt-1 rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold text-slate-800 shadow-sm">
+            {STUDY_AREA.name}
+          </span>
+        </div>
+      </Marker>
+
       {validEarthquakes.map((earthquake) => {
         const markerSize =
           earthquake.category === "latest"
@@ -151,7 +180,7 @@ export default function BaseMap({
                   />
                 </div>
 
-                <p className="mt-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                <p className="mt-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">
                   {selectedEarthquake.category === "latest"
                     ? "Latest earthquake"
                     : selectedEarthquake.category === "felt"
@@ -165,7 +194,7 @@ export default function BaseMap({
                   {selectedEarthquake.depthKm} km
                 </p>
 
-                <p className="mt-0.5 text-[9px] text-slate-400">
+                <p className="mt-0.5 text-[10px] text-slate-500">
                   Depth
                 </p>
               </div>
@@ -173,11 +202,18 @@ export default function BaseMap({
 
             {/* Location */}
             <div className="mt-4 border-t border-slate-100 pt-3">
-              <p className="text-sm font-semibold leading-5 text-slate-800">
-                {selectedEarthquake.region}
+              <p
+                className="text-sm font-semibold leading-5 text-slate-800"
+                title={selectedEarthquake.region}
+              >
+                {formatRegion(selectedEarthquake.region)}
               </p>
 
-              <p className="mt-2 text-[11px] text-slate-500">
+              <p className="mt-1 text-[11px] text-slate-600">
+                {distanceFromStudyArea(selectedEarthquake)}
+              </p>
+
+              <p className="mt-1 text-[11px] text-slate-500">
                 {selectedEarthquake.date} · {selectedEarthquake.time}
               </p>
             </div>
@@ -187,8 +223,11 @@ export default function BaseMap({
               <div className="mt-3 flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2.5">
                 <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
 
-                <p className="text-[11px] leading-4 text-slate-600">
-                  {selectedEarthquake.potential}
+                <p
+                  className="text-[11px] leading-4 text-slate-600"
+                  title={selectedEarthquake.potential}
+                >
+                  {formatPotential(selectedEarthquake.potential)}
                 </p>
               </div>
             )}
@@ -196,6 +235,7 @@ export default function BaseMap({
         </Popup>
       )}
     </Map>
+    </div>
   );
 }
 

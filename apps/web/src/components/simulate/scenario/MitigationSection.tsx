@@ -1,4 +1,8 @@
 import { RetentionLevel } from "@/types/simulation";
+import {
+  MITIGATION_EFFECTIVENESS,
+  RETENTION_FACTORS,
+} from "@/lib/simulation";
 import { ScenarioSlider, SegmentedControl } from "./ScenarioControls";
 
 /** Percent change in the runoff index when only this control is applied. Negative means less runoff. */
@@ -71,9 +75,17 @@ export function MitigationSection({
 
       <ScenarioSlider
         label="Green infrastructure"
-        description="Rain gardens, bioswales and vegetated drainage."
+        description="Rain gardens, bioswales and vegetated drainage. These treat runoff; they don't change the land mix above."
         value={greenInfrastructurePercent}
         onChange={setGreenInfrastructurePercent}
+        hint={
+          greenInfrastructurePercent > 0
+            ? `Cuts remaining runoff by about ${Math.round(
+                greenInfrastructurePercent *
+                  MITIGATION_EFFECTIVENESS.greenInfrastructure
+              )}%`
+            : "Applied to the runoff left after the changes above"
+        }
         effect={formatEffect(effects?.greenInfrastructure)}
       />
 
@@ -84,6 +96,10 @@ export function MitigationSection({
 
         <p className="mb-2 mt-0.5 text-xs leading-4 text-slate-500">
           Temporary on-site storage. Applied after the surface mix.
+          {retentionLevel !== "none" &&
+            ` Stores about ${Math.round(
+              RETENTION_FACTORS[retentionLevel] * 100
+            )}% of the remaining runoff.`}
         </p>
 
         <SegmentedControl

@@ -1,106 +1,68 @@
-import type {
-  RiskOverlay
-} from "@/types/risk";
+"use client";
+
+import SegmentedControl, {
+  type SegmentedOption,
+} from "@/components/simulate/ui/SegmentedControl";
+import { MapHint } from "@/components/simulate/map/MapHud";
+import type { RiskOverlay } from "@/types/risk";
+
+type View = "2d" | "3d";
+
+const VIEW_OPTIONS: SegmentedOption<View>[] = [
+  { value: "2d", label: "2D" },
+  { value: "3d", label: "3D" },
+];
+
+const OVERLAY_OPTIONS: SegmentedOption<RiskOverlay>[] = [
+  { value: "none", label: "None" },
+  { value: "flood", label: "Flood" },
+  { value: "tsunami", label: "Tsunami" },
+  { value: "landslide", label: "Landslide" },
+];
 
 type RiskMapControlsProps = {
   terrainEnabled: boolean;
-  setTerrainEnabled:
-    (value: boolean) => void;
+  setTerrainEnabled: (value: boolean) => void;
 
   riskOverlay: RiskOverlay;
-  setRiskOverlay:
-    (value: RiskOverlay) => void;
+  setRiskOverlay: (value: RiskOverlay) => void;
+
+  /** Show the "click the map" hint under the controls. */
+  showHint: boolean;
 };
 
+/**
+ * Same layout as the Simulate map's top bar (view switch on the left, hazard
+ * layer on the right, hint underneath) so the two maps feel like one product.
+ */
 export default function RiskMapControls({
   terrainEnabled,
   setTerrainEnabled,
   riskOverlay,
   setRiskOverlay,
+  showHint,
 }: RiskMapControlsProps) {
   return (
-    <div
-      className="
-        absolute right-4 top-4 z-30
-        w-[280px]
-        overflow-hidden rounded-2xl
-        border border-slate-200/80
-        bg-white/95 shadow-lg
-        backdrop-blur-md
-      "
-    >
-      <div className="flex items-center justify-between px-3 py-2.5">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-          View
-        </p>
+    <div className="pointer-events-none absolute inset-x-4 top-4 z-30 flex flex-col items-start gap-3">
+      <div className="pointer-events-none flex w-full flex-wrap items-start justify-between gap-3">
+        <SegmentedControl
+          label="Map view"
+          options={VIEW_OPTIONS}
+          value={terrainEnabled ? "3d" : "2d"}
+          onChange={(value) => setTerrainEnabled(value === "3d")}
+          className="pointer-events-auto"
+        />
 
-        <div className="flex rounded-xl bg-slate-100 p-1">
-          <button
-            type="button"
-            onClick={() =>
-              setTerrainEnabled(false)
-            }
-            className={`rounded-lg px-3 py-1.5 text-[11px] font-medium ${
-              !terrainEnabled
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500"
-            }`}
-          >
-            2D
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              setTerrainEnabled(true)
-            }
-            className={`rounded-lg px-3 py-1.5 text-[11px] font-medium ${
-              terrainEnabled
-                ? "bg-slate-900 text-white shadow-sm"
-                : "text-slate-500"
-            }`}
-          >
-            3D
-          </button>
-        </div>
+        <SegmentedControl
+          label="Hazard layer"
+          options={OVERLAY_OPTIONS}
+          value={riskOverlay}
+          onChange={setRiskOverlay}
+          className="pointer-events-auto"
+        />
       </div>
 
-      <div className="border-t border-slate-100" />
-
-      <div className="px-3 py-2.5">
-        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-          Hazard overlay
-        </p>
-
-        <div className="grid grid-cols-4 rounded-xl bg-slate-100 p-1">
-          {(
-            [
-              "none",
-              "flood",
-              "tsunami",
-              "landslide",
-            ] as const
-          ).map((overlay) => (
-            <button
-              key={overlay}
-              type="button"
-              onClick={() =>
-                setRiskOverlay(overlay)
-              }
-              className={`rounded-lg px-1.5 py-1.5 text-[10px] font-medium ${
-                riskOverlay === overlay
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "text-slate-500"
-              }`}
-            >
-              {overlay === "none"
-                ? "None"
-                : overlay[0].toUpperCase() +
-                  overlay.slice(1)}
-            </button>
-          ))}
-        </div>
-      </div>
+      {showHint && <MapHint text="Click anywhere on the map to analyse a site" />}
     </div>
   );
 }

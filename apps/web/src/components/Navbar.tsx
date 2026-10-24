@@ -24,11 +24,9 @@ const steps = [
 export default function Navbar() {
   const pathname = usePathname();
 
-  const activeIndex = Math.max(
-    steps.findIndex((step) =>
-      pathname.startsWith(step.href)
-    ),
-    0
+  // -1 on the landing page, so no step is shown as active there.
+  const activeIndex = steps.findIndex((step) =>
+    pathname.startsWith(step.href)
   );
 
   return (
@@ -84,7 +82,7 @@ export default function Navbar() {
         >
           {/* Active background */}
           <div
-            className="
+            className={`
               absolute bottom-1 top-1
               rounded-lg
               border border-slate-200/70
@@ -92,13 +90,14 @@ export default function Navbar() {
               shadow-[0_1px_5px_rgba(15,23,42,0.08)]
               transition-all duration-300
               ease-[cubic-bezier(0.22,1,0.36,1)]
-            "
+              ${activeIndex >= 0 ? "opacity-100" : "opacity-0"}
+            `}
             style={{
               width:
                 "calc((100% - 8px) / 3)",
               left: `calc(
                 4px +
-                ${activeIndex} *
+                ${Math.max(activeIndex, 0)} *
                 ((100% - 8px) / 3)
               )`,
             }}
@@ -131,7 +130,7 @@ export default function Navbar() {
                         ${
                           active
                             ? "text-slate-950"
-                            : "text-slate-400 hover:text-slate-600"
+                            : "text-slate-500 hover:text-slate-700"
                         }
                       `}
                     >

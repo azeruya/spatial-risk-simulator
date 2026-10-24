@@ -1,13 +1,10 @@
-const SHELL =
-  "flex h-full w-full flex-col border-l border-slate-200 bg-white";
+const SHELL = "flex h-full w-full flex-col bg-white";
 
 function Header({ title }: { title: string }) {
   return (
     <>
       <div className="px-5 pb-4 pt-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-          Scenario impact
-        </p>
+        <p className="ui-eyebrow">Scenario impact</p>
 
         <h2 className="mt-1.5 text-[17px] font-semibold tracking-tight text-slate-950">
           {title}
