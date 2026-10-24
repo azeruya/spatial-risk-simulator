@@ -14,11 +14,7 @@ const GROUPS = [
   { key: "expert-review", title: "Check with experts" },
 ] as const;
 
-const PRIORITY_ORDER = {
-  high: 0,
-  medium: 1,
-  normal: 2,
-} as const;
+const PRIORITY_ORDER = { high: 0, medium: 1, normal: 2 } as const;
 
 export default function RecommendationsAccordion({
   recommendations,
@@ -26,28 +22,20 @@ export default function RecommendationsAccordion({
   onToggle,
 }: Props) {
   return (
-    <ImpactAccordion
-      title="Recommendations"
-      open={open}
-      onToggle={onToggle}
-    >
+    <ImpactAccordion title="Recommendations" open={open} onToggle={onToggle}>
       <div className="space-y-4">
         {GROUPS.map((group) => {
           const items = recommendations
             .filter((item) => item.group === group.key)
             .sort(
-              (a, b) =>
-                PRIORITY_ORDER[a.priority] -
-                PRIORITY_ORDER[b.priority]
+              (a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
             );
 
           if (items.length === 0) return null;
 
           return (
             <div key={group.key}>
-              <p className="text-xs font-medium text-slate-600">
-                {group.title}
-              </p>
+              <p className="text-xs font-medium text-slate-600">{group.title}</p>
 
               <ul className="mt-2 space-y-2">
                 {items.map((item) => (

@@ -218,16 +218,32 @@ export function simulateDevelopment(
 
     projectAreaHa,
 
-    imperviousPercent,
-    greenPercent,
+    imperviousPercent: rawImperviousPercent,
+    greenPercent: rawGreenPercent,
 
     additionalPopulation,
 
-    baselineImperviousPercent,
-    baselineGreenPercent,
+    baselineImperviousPercent: rawBaselineImperviousPercent,
+    baselineGreenPercent: rawBaselineGreenPercent,
 
     mitigation,
   } = input;
+
+  /*
+   * Clamp once, up front, so every path below uses the same surface mix.
+   * Previously only calculateRunoffCoefficient() clamped green to
+   * (100 - impervious); the mitigated path did not, so with zero mitigation
+   * "Mitigated" could differ from "Proposed" whenever paved% + green% > 100.
+   */
+  const imperviousPercent = clamp(rawImperviousPercent, 0, 100);
+  const greenPercent = clamp(rawGreenPercent, 0, 100 - imperviousPercent);
+
+  const baselineImperviousPercent = clamp(rawBaselineImperviousPercent, 0, 100);
+  const baselineGreenPercent = clamp(
+    rawBaselineGreenPercent,
+    0,
+    100 - baselineImperviousPercent
+  );
 
   /*
    * ============================================================

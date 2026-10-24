@@ -1,11 +1,15 @@
+// src/lib/planning/build-analysis-rows.ts
+
 import type {
   AnalysisRow,
-  HazardStatus,
+  FootprintHazards,
 } from "@/types/simulation";
 
 import type {
   TerrainAnalysis,
 } from "@/types/terrain";
+
+import { HazardStatus } from "@/types/simulation";
 
 type Input = {
   baselineImperviousPercent: number;
@@ -27,42 +31,6 @@ type Input = {
   nearbyPopulation: number | null;
   additionalPopulation: number;
 };
-
-function formatPointChange(
-  value: number
-) {
-  if (Math.abs(value) < 0.01) {
-    return "No change";
-  }
-
-  return `${value > 0 ? "+" : ""}${value.toFixed(
-    0
-  )} points`;
-}
-
-function formatHazardStatus(
-  status: HazardStatus
-) {
-  switch (status) {
-    case "high":
-      return "High";
-
-    case "moderate":
-      return "Moderate";
-
-    case "low":
-      return "Low";
-
-    case "none":
-      return "No hazard value";
-
-    case "no-data":
-      return "No mapped data";
-
-    case "unavailable":
-      return "Unavailable";
-  }
-}
 
 export function buildAnalysisRows({
   imperviousPercent,
@@ -86,141 +54,66 @@ export function buildAnalysisRows({
 }: Input): AnalysisRow[] {
   const rows: AnalysisRow[] = [];
 
-  const imperviousChange =
-    imperviousPercent -
-    baselineImperviousPercent;
-
-  const greenChange =
-    greenPercent -
-    baselineGreenPercent;
-
-  // =========================================================
-  // SURFACE CHANGE
-  // =========================================================
-
   rows.push({
     label: "Paved surface",
-
     current:
-      `${baselineImperviousPercent.toFixed(
-        0
-      )}%`,
-
+      `${baselineImperviousPercent.toFixed(0)}%`,
     proposed:
-      `${imperviousPercent.toFixed(
-        0
-      )}%`,
-
+      `${imperviousPercent.toFixed(0)}%`,
     change:
-      formatPointChange(
-        imperviousChange
-      ),
+      `${(
+        imperviousPercent -
+        baselineImperviousPercent
+      ).toFixed(0)} points`,
   });
 
   rows.push({
     label: "Green space",
-
     current:
-      `${baselineGreenPercent.toFixed(
-        0
-      )}%`,
-
+      `${baselineGreenPercent.toFixed(0)}%`,
     proposed:
-      `${greenPercent.toFixed(
-        0
-      )}%`,
-
+      `${greenPercent.toFixed(0)}%`,
     change:
-      formatPointChange(
-        greenChange
-      ),
+      `${(
+        greenPercent -
+        baselineGreenPercent
+      ).toFixed(0)} points`,
   });
-
-  // =========================================================
-  // RUNOFF
-  // =========================================================
 
   rows.push({
     label: "Runoff index",
-
     current:
       runoffCurrent.toFixed(2),
-
     proposed:
       runoffProposed.toFixed(2),
-
     mitigated:
       runoffMitigated !== null
         ? runoffMitigated.toFixed(2)
         : undefined,
   });
 
-  // =========================================================
-  // HAZARDS
-  // These do NOT change across scenarios.
-  // =========================================================
-
-  rows.push({
-    label: "Flood hazard",
-    value:
-      formatHazardStatus(
-        floodStatus
-      ),
-  });
-
-  rows.push({
-    label: "Tsunami hazard",
-    value:
-      formatHazardStatus(
-        tsunamiStatus
-      ),
-  });
-
-  rows.push({
-    label: "Landslide hazard",
-    value:
-      formatHazardStatus(
-        landslideStatus
-      ),
-  });
-
-  // =========================================================
-  // TERRAIN
-  // =========================================================
-
   if (terrain) {
     rows.push({
       label: "Terrain",
-
       value:
         `${Math.round(
           terrain.elevation.mean
-        )} m elevation · ${terrain.slope.mean.toFixed(
+        )} m, slope ${terrain.slope.mean.toFixed(
           1
-        )}° mean slope`,
+        )}°`,
     });
   }
 
-  // =========================================================
-  // POPULATION
-  // =========================================================
-
   rows.push({
     label: "People nearby",
-
     value:
-      nearbyPopulation !== null
-        ? additionalPopulation > 0
-          ? `${Math.round(
-              nearbyPopulation
+        nearbyPopulation !== null &&
+        nearbyPopulation !== undefined
+        ? `${Math.round(
+            nearbyPopulation
             ).toLocaleString()} + ${additionalPopulation.toLocaleString()} added`
-          : Math.round(
-              nearbyPopulation
-            ).toLocaleString()
-        : additionalPopulation > 0
-          ? `Unavailable · +${additionalPopulation.toLocaleString()} added`
-          : "Unavailable",
-  });
+        : `Unavailable + ${additionalPopulation.toLocaleString()} added`,
+    });
 
   return rows;
 }
